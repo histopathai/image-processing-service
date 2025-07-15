@@ -64,3 +64,6 @@ field.html
 # Ignore generated Go doc file
 docs/docs.go
 .firebaserc
+
+.credentials
+*/.gac.json
