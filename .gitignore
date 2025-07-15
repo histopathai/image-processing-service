@@ -1,0 +1,66 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Output of the go build command
+*.out
+
+# Test binary, coverage reports
+*.test
+*.coverprofile
+
+# Dependency directories (Go modülü kullanıyorsan vendor'ı genelde saklamazsın)
+vendor/
+
+# Go workspace files (Go 1.18+)
+go.work
+go.work.sum
+
+# IDE/editor configs
+.vscode/
+.idea/
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build artifacts
+bin/
+build/
+dist/
+
+# Coverage results
+coverage.out
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Swagger generated files (dışa aktarılanlar)
+docs/swagger.json
+docs/swagger.yaml
+
+# Firebase config ve local test konfigürasyonları (prod için hassas olabilir)
+firebase.json
+firestore.rules
+firestore.indexes.json
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+
+# HTML mock files
+field.html
+
+# Ignore generated Go doc file
+docs/docs.go
+.firebaserc
