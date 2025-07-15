@@ -67,3 +67,5 @@ docs/docs.go
 
 .credentials
 */.gac.json
+
+logs/
