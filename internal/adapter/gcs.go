@@ -18,6 +18,7 @@ type GCSAdapter struct {
 	client    *storage.Client
 	bucket    string
 	ProjectID string
+	numWorker int
 }
 
 type GCSManager interface {
@@ -28,7 +29,7 @@ type GCSManager interface {
 	CreateBucket(ctx context.Context, bucketName string) error
 }
 
-func NewGCSAdapter(projectID, bucket string) (*GCSAdapter, error) {
+func NewGCSAdapter(projectID, bucket string, numWorker int) (*GCSAdapter, error) {
 	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
 	if err != nil {
@@ -39,6 +40,7 @@ func NewGCSAdapter(projectID, bucket string) (*GCSAdapter, error) {
 		client:    client,
 		bucket:    bucket,
 		ProjectID: projectID,
+		numWorker: numWorker,
 	}, nil
 }
 
@@ -133,7 +135,10 @@ func (g *GCSAdapter) UploadDir(ctx context.Context, localDir string, gcsPrefix s
 	jobs := make(chan uploadJob)
 	errCh := make(chan error, 1)
 
-	workerCount := runtime.NumCPU()
+	if g.numWorker <= 0 {
+		g.numWorker = runtime.NumCPU()
+	}
+	workerCount := g.numWorker
 	var wg sync.WaitGroup
 
 	worker := func() {
