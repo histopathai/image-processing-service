@@ -9,6 +9,8 @@ import (
 )
 
 func Start(cfg *config.Config, h *handler.Handler) {
+
+	gin.SetMode(cfg.ServerConfig.GinMode)
 	router := gin.Default()
 
 	router.POST("/upload", h.UploadImages)
