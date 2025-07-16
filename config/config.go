@@ -19,6 +19,8 @@ type ServerConfig struct {
 	Port             int
 	Host             string
 	SupportedFormats []string
+	NumberOfWorkers  int
+	GinMode          string
 }
 
 type GCPConfig struct {
@@ -66,6 +68,8 @@ func LoadConfig() (Config, error) {
 			Port:             int(getEnvAsInt("SERVER_PORT", 8080)),
 			Host:             getEnvOrDefault("SERVER_HOST", "localhost"),
 			SupportedFormats: supported_formats,
+			NumberOfWorkers:  int(getEnvAsInt("NUMBER_OF_WORKERS", 4)),
+			GinMode:          getEnvOrDefault("GIN_MODE", "release"),
 		},
 
 		GCPConfig: GCPConfig{
