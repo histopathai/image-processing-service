@@ -3,7 +3,8 @@ package utils
 import (
 	"fmt"
 	"os"
-	"time"
+
+	"github.com/google/uuid"
 )
 
 func Contains(slice []string, item string) bool {
@@ -15,9 +16,8 @@ func Contains(slice []string, item string) bool {
 	return false
 }
 
-func GenerateUID() string {
-	// Generate a unique identifier for the file
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+func GenerateUniqueID() string {
+	return uuid.New().String()
 }
 
 func CreateDir(path string) error {
