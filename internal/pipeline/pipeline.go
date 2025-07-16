@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/histopathai/image-processing-service/internal/adapter"
 	"github.com/histopathai/image-processing-service/internal/models"
@@ -45,6 +46,7 @@ func NewPipeline(imgService *service.ImgProcService, fsAdapter *adapter.Firestor
 
 	return p
 }
+
 func (p *Pipeline) startProcessWorker() {
 	for job := range p.ProcessCh {
 		_ = utils.LogInfo(map[string]interface{}{
@@ -52,6 +54,50 @@ func (p *Pipeline) startProcessWorker() {
 			"event":     "process-start",
 			"imagePath": job.ImagePath,
 		})
+
+		// --- Duplicate kontrolü buraya taşındı (işleme başlamadan önce) ---
+		isDup, err := p.isDuplicate(context.Background(), job.DatasetInfo)
+		if err != nil {
+			_ = utils.LogError(map[string]interface{}{
+				"module":      "pipeline",
+				"event":       "duplicate-check-error-pre-process",
+				"imagePath":   job.ImagePath,
+				"datasetName": job.DatasetInfo.DatasetName,
+				"fileName":    job.DatasetInfo.FileName,
+				"organType":   job.DatasetInfo.OrganType,
+				"error":       err.Error(),
+				"success":     false,
+			})
+			p.RegisterCh <- JobResult{
+				Image:    nil,
+				TmpDir:   "",
+				Error:    err,
+				Success:  false,
+				ErrorMsg: err.Error(),
+			}
+			continue
+		}
+
+		if isDup {
+			_ = utils.LogWarning(map[string]interface{}{
+				"module":      "pipeline",
+				"event":       "image-duplicate-skipped-pre-process",
+				"imagePath":   job.ImagePath,
+				"datasetName": job.DatasetInfo.DatasetName,
+				"fileName":    job.DatasetInfo.FileName,
+				"organType":   job.DatasetInfo.OrganType,
+				"message":     "Duplicate entry found based on DatasetInfo, skipping processing.",
+				"success":     false,
+			})
+			p.RegisterCh <- JobResult{
+				Image:    nil,
+				TmpDir:   "",
+				Error:    fmt.Errorf("duplicate image found, processing skipped"),
+				Success:  false,
+				ErrorMsg: "Duplicate image found, processing skipped",
+			}
+			continue
+		}
 
 		image, tmpDir, err := p.ImgService.ProcessImage(context.Background(), job.ImagePath)
 
@@ -92,10 +138,15 @@ func (p *Pipeline) startRegisterWorker() {
 	for result := range p.RegisterCh {
 		ctx := context.Background()
 
+		imageID := "N/A"
+		if result.Image != nil {
+			imageID = result.Image.ID
+		}
+
 		_ = utils.LogInfo(map[string]interface{}{
 			"module":  "pipeline",
 			"event":   "register-start",
-			"imageID": result.Image.ID,
+			"imageID": imageID,
 			"tmpDir":  result.TmpDir,
 			"success": result.Success,
 			"error":   result.ErrorMsg,
@@ -144,4 +195,19 @@ func (p *Pipeline) startRegisterWorker() {
 			"success": true,
 		})
 	}
+}
+
+func (p *Pipeline) isDuplicate(ctx context.Context, datasetInfo models.DatasetInfo) (bool, error) {
+	filter := map[string]interface{}{
+		"dataset_name": datasetInfo.DatasetName,
+		"file_name":    datasetInfo.FileName,
+		"organ_type":   datasetInfo.OrganType,
+	}
+
+	existingDocs, err := p.FsAdapter.List(ctx, filter)
+	if err != nil {
+		return false, fmt.Errorf("failed to check for duplicate in Firestore: %w", err)
+	}
+
+	return len(existingDocs) > 0, nil
 }
