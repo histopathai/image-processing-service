@@ -23,7 +23,13 @@ func NewFirestoreAdapter(client *firestore.Client, collection string) *Firestore
 }
 
 func (f *FirestoreAdapter) Create(ctx context.Context, data map[string]interface{}) (string, error) {
-	docRef := f.client.Collection(f.collection).NewDoc()
+	imageID, ok := data["id"].(string)
+
+	if !ok || imageID == "" {
+		return "", fmt.Errorf("invalid or missing 'id' field in data")
+	}
+
+	docRef := f.client.Collection(f.collection).Doc(imageID)
 	_, err := docRef.Set(ctx, data)
 	if err != nil {
 		return "", fmt.Errorf("failed to create document: %w", err)
