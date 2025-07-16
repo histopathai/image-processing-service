@@ -22,7 +22,7 @@ func main() {
 		log.Fatalf("Config load error: %v", err)
 	}
 
-	gcsAdapter, err := adapter.NewGCSAdapter(cfg.GCPConfig.ProjectID, cfg.GCPConfig.Bucket)
+	gcsAdapter, err := adapter.NewGCSAdapter(cfg.GCPConfig.ProjectID, cfg.GCPConfig.Bucket, cfg.ServerConfig.NumberOfWorkers)
 	if err != nil {
 		log.Fatalf("GCS init error: %v", err)
 	}
