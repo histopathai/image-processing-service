@@ -40,18 +40,9 @@ func (f *File) Ext() string {
 }
 
 func (f *File) FileInfo() (*models.ImageInfo, error) {
-
-	if _, err := os.Stat(f.FilePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("file does not exist: %s", f.FilePath)
-	}
-
-	if f.ext == "svs" {
-		return getSVSInfo(f.FilePath)
-	} else {
-		return getVIPSInfo(f.FilePath)
-	}
-
+	return getExifInfo(f.FilePath)
 }
+
 func (f *File) ExportThumbnail(outputPath string, thumbSize int) error {
 	if f.ext == "svs" {
 		return exportSVSThumbnail(f.FilePath, outputPath, thumbSize)
@@ -136,73 +127,83 @@ func (f *File) ExtractDZI(outputPath string, cfg *config.Config) error {
 	return nil
 }
 
-func getSVSInfo(filepath string) (*models.ImageInfo, error) {
-	cmd := exec.Command("openslide-show-properties", filepath)
+func getExifInfo(filePath string) (*models.ImageInfo, error) {
+	cmd := exec.Command("exiftool", "-json", filePath)
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute openslide command: %w", err)
+		return nil, fmt.Errorf("failed to execute exiftool: %w", err)
 	}
 
-	info := &models.ImageInfo{}
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		parts := strings.SplitN(strings.TrimSpace(line), "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := parts[0]
-		value := parts[1]
+	var exifData []map[string]interface{}
+	if err := json.Unmarshal(output, &exifData); err != nil {
+		return nil, fmt.Errorf("failed to parse exiftool output: %w", err)
+	}
+	if len(exifData) == 0 {
+		return nil, errors.New("exiftool returned empty data")
+	}
 
-		switch key {
-		case "openslide.level[0].width":
-			if _, err := fmt.Sscanf(value, "%d", &info.Width); err != nil {
-				return nil, fmt.Errorf("invalid width value: %w", err)
-			}
-		case "openslide.level[0].height":
-			if _, err := fmt.Sscanf(value, "%d", &info.Height); err != nil {
-				return nil, fmt.Errorf("invalid height value: %w", err)
-			}
-		case "openslide.image-size":
-			if _, err := fmt.Sscanf(value, "%d", &info.Size); err != nil {
-				return nil, fmt.Errorf("invalid size value: %w", err)
-			}
-		case "openslide.format":
-			info.Format = value
-		default:
-			continue
+	data := exifData[0]
+	info := &models.ImageInfo{}
+
+	// Parse width
+	if w, ok := data["ImageWidth"].(float64); ok {
+		info.Width = int(w)
+	} else if wStr, ok := data["ImageWidth"].(string); ok {
+		if wParsed, err := strconv.Atoi(wStr); err == nil {
+			info.Width = wParsed
+		}
+	}
+
+	// Parse height
+	if h, ok := data["ImageHeight"].(float64); ok {
+		info.Height = int(h)
+	} else if hStr, ok := data["ImageHeight"].(string); ok {
+		if hParsed, err := strconv.Atoi(hStr); err == nil {
+			info.Height = hParsed
+		}
+	}
+
+	// Format
+	if format, ok := data["FileType"].(string); ok {
+		info.Format = strings.ToLower(format)
+	}
+
+	// Size (optional)
+	if sizeStr, ok := data["FileSize"].(string); ok {
+		// örn: "123 kB", "5.4 MB"
+		size, err := parseFileSize(sizeStr)
+		if err == nil {
+			info.Size = size
 		}
 	}
 
 	return info, nil
 }
+func parseFileSize(sizeStr string) (int64, error) {
+	sizeStr = strings.TrimSpace(sizeStr)
+	parts := strings.Fields(sizeStr)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid size format: %s", sizeStr)
+	}
 
-func getVIPSInfo(filepath string) (*models.ImageInfo, error) {
-	cmd := exec.Command("vipsheader", "-f", "json", filepath)
-	output, err := cmd.Output()
+	value, err := strconv.ParseFloat(parts[0], 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute vipsheader: %w", err)
+		return 0, err
 	}
 
-	var header map[string]interface{}
-	if err := json.Unmarshal(output, &header); err != nil {
-		return nil, fmt.Errorf("failed to parse vipsheader output: %w", err)
+	unit := strings.ToLower(parts[1])
+	switch unit {
+	case "bytes":
+		return int64(value), nil
+	case "kb":
+		return int64(value * 1024), nil
+	case "mb":
+		return int64(value * 1024 * 1024), nil
+	case "gb":
+		return int64(value * 1024 * 1024 * 1024), nil
+	default:
+		return 0, fmt.Errorf("unknown unit: %s", unit)
 	}
-
-	info := &models.ImageInfo{}
-	if width, ok := header["Xsize"].(float64); ok {
-		info.Width = int(width)
-	}
-	if height, ok := header["Ysize"].(float64); ok {
-		info.Height = int(height)
-	}
-	if size, ok := header["Size"].(float64); ok {
-		info.Size = int64(size)
-	}
-	if format, ok := header["Format"].(string); ok {
-		info.Format = format
-	}
-
-	return info, nil
 }
 
 func exportVIPSThumbnail(inputPath, outputPath string, thumbSize int) error {
