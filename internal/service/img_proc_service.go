@@ -38,7 +38,7 @@ func (s *ImgProcService) ProcessImage(ctx context.Context, filePath string) (*mo
 		return nil, "", fmt.Errorf("failed to get file info: %w", err)
 	}
 
-	uid := utils.GenerateUID()
+	uid := utils.GenerateUniqueID()
 
 	tmpdir := fmt.Sprintf("/tmp/%s", uid)
 	if err := utils.CreateDir(tmpdir); err != nil {
