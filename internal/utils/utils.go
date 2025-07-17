@@ -1,10 +1,11 @@
 package utils
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
-
-	"github.com/google/uuid"
+	"strings"
 )
 
 func Contains(slice []string, item string) bool {
@@ -17,7 +18,17 @@ func Contains(slice []string, item string) bool {
 }
 
 func GenerateUniqueID() string {
-	return uuid.New().String()
+	for {
+		b := make([]byte, 15) // 15 byte -> ~20 karakter base64
+		if _, err := rand.Read(b); err == nil {
+			id := base64.URLEncoding.EncodeToString(b)
+			id = strings.TrimRight(id, "=")
+			if len(id) > 20 {
+				id = id[:20]
+			}
+			return id
+		}
+	}
 }
 
 func CreateDir(path string) error {
