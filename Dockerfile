@@ -1,7 +1,10 @@
 # Build stage
-FROM golang:1.24rc2-bullseye AS builder
+FROM golang:1.23-bullseye AS builder
 
 WORKDIR /app
+
+# Set GOTOOLCHAIN to auto to allow downloading Go 1.24
+ENV GOTOOLCHAIN=auto
 
 # Copy go mod files
 COPY go.mod go.sum ./
