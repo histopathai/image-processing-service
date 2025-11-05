@@ -2,11 +2,11 @@ package pubsub
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/histopathai/image-processing-service/internal/domain/events"
+	"github.com/histopathai/image-processing-service/pkg/errors"
 )
 
 type Publisher struct {
@@ -36,7 +36,7 @@ func (p *Publisher) Publish(ctx context.Context, topicID string, data []byte, at
 	_, err := result.Get(ctx)
 	if err != nil {
 		p.logger.Error("Failed to publish message", "topic", topicID, "error", err)
-		return fmt.Errorf("could not publish message to topic %s: %w", topicID, err)
+		return errors.NewInternalError("could not publish message").WithContext("topic", topicID)
 	}
 
 	p.logger.Info("Message published successfully", "topic", topicID)
