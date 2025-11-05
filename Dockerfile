@@ -14,8 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o image-processing-service .
-
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o image-processing-service ./cmd/main.go
 # Runtime stage with GCS Fuse and libvips
 FROM debian:bullseye-slim
 
