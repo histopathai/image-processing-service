@@ -11,23 +11,18 @@ import (
 	"strings"
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
+	"github.com/histopathai/image-processing-service/pkg/config"
 )
-
-type DZIProcessorConfig struct {
-	TileSize int64
-	Overlap  int64
-	Layout   string
-	Quality  int64
-	Suffix   string
-}
 
 type ImageProcessor struct {
 	logger *slog.Logger
+	cfg    config.DZIConfig
 }
 
-func NewImageProcessor(logger *slog.Logger) *ImageProcessor {
+func NewImageProcessor(logger *slog.Logger, cfg config.DZIConfig) *ImageProcessor {
 	return &ImageProcessor{
 		logger: logger,
+		cfg:    cfg,
 	}
 }
 
@@ -134,7 +129,7 @@ func (ip *ImageProcessor) ExtractThumbnail(ctx context.Context, inputPath, outpu
 	return nil
 }
 
-func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File, cfg DZIProcessorConfig) error {
+func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File) error {
 	if file.ProcessedPath == nil {
 		err := fmt.Errorf("ProcessedPath is nil for file ID: %s", file.ID)
 		ip.logger.Error("Cannot start DZI processing", "error", err)
@@ -149,7 +144,7 @@ func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File, cf
 		"output_base", outputPathBase,
 	)
 
-	err := ip.vipsDZIProcessor(ctx, file.Path, outputPathBase, cfg)
+	err := ip.vipsDZIProcessor(ctx, file.Path, outputPathBase)
 	if err != nil {
 		ip.logger.Error("FAILED DZI processing",
 			"file_path", file.Path,
@@ -167,16 +162,16 @@ func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File, cf
 	return nil
 }
 
-func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string, outputPathBase string, cfg DZIProcessorConfig) error {
+func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string, outputPathBase string) error {
 	args := []string{
 		"dzsave",
 		inputPath,
 		outputPathBase,
-		"--layout", cfg.Layout,
-		"--suffix", cfg.Suffix,
-		"--tile-size", fmt.Sprintf("%d", cfg.TileSize),
-		"--overlap", fmt.Sprintf("%d", cfg.Overlap),
-		"--Q", fmt.Sprintf("%d", cfg.Quality),
+		"--layout", ip.cfg.Layout,
+		"--suffix", ip.cfg.Suffix,
+		"--tile-size", fmt.Sprintf("%d", ip.cfg.TileSize),
+		"--overlap", fmt.Sprintf("%d", ip.cfg.Overlap),
+		"--Q", fmt.Sprintf("%d", ip.cfg.Quality),
 		"--background", "255",
 		"--depth", "onetile",
 	}
