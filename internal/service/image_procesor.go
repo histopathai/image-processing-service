@@ -12,6 +12,7 @@ import (
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/pkg/config"
+	"github.com/histopathai/image-processing-service/pkg/errors"
 )
 
 type ImageProcessor struct {
@@ -32,7 +33,7 @@ func (ip *ImageProcessor) GetImageInfo(ctx context.Context, file *model.File) er
 	info, err := os.Stat(file.Path)
 	if err != nil {
 		ip.logger.Error("Failed to stat file", "file_path", file.Path, "error", err)
-		return fmt.Errorf("could not stat file %s: %w", file.Path, err)
+		return errors.NewNotFoundError("file not found").WithContext("file_path", file.Path)
 	}
 	size := info.Size()
 	file.Size = &size
@@ -51,7 +52,7 @@ func (ip *ImageProcessor) GetImageInfo(ctx context.Context, file *model.File) er
 	}
 	width, err := strconv.Atoi(widthStr)
 	if err != nil {
-		return fmt.Errorf("could not parse width '%s': %w", widthStr, err)
+		return errors.NewValidationError("invalid image width").WithContext("width", widthStr)
 	}
 	file.Width = &width
 
@@ -62,7 +63,7 @@ func (ip *ImageProcessor) GetImageInfo(ctx context.Context, file *model.File) er
 	}
 	height, err := strconv.Atoi(heightStr)
 	if err != nil {
-		return fmt.Errorf("could not parse height '%s': %w", heightStr, err)
+		return errors.NewValidationError("invalid image height").WithContext("height", heightStr)
 	}
 	file.Height = &height
 
@@ -89,7 +90,7 @@ func (ip *ImageProcessor) runVipsHeaderField(ctx context.Context, inputPath stri
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("vipsheader failed (field: %s): %w | Output: %s", fieldName, err, string(output))
+		return "", errors.NewInternalError("vips header failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
 	}
 
 	return strings.TrimSpace(string(output)), nil
@@ -117,7 +118,7 @@ func (ip *ImageProcessor) ExtractThumbnail(ctx context.Context, inputPath, outpu
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("vips thumbnail failed: %w | Output: %s", err, string(output))
+		return errors.NewInternalError("vips thumbnail failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
 	}
 
 	ip.logger.Info("Successfully created thumbnail",
@@ -131,9 +132,8 @@ func (ip *ImageProcessor) ExtractThumbnail(ctx context.Context, inputPath, outpu
 
 func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File) error {
 	if file.ProcessedPath == nil {
-		err := fmt.Errorf("ProcessedPath is nil for file ID: %s", file.ID)
-		ip.logger.Error("Cannot start DZI processing", "error", err)
-		return err
+		ip.logger.Error("Cannot start DZI processing")
+		return errors.NewValidationError("processed path is not set").WithContext("file_id", file.ID)
 	}
 
 	outputPathBase := *file.ProcessedPath
@@ -182,7 +182,7 @@ func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("vips dzsave failed: %w | Output: %s", err, string(output))
+		return errors.NewInternalError("vips dzisave failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
 	}
 
 	return nil
