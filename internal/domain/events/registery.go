@@ -1,8 +1,9 @@
 package events
 
 import (
-	"fmt"
 	"reflect"
+
+	"github.com/histopathai/image-processing-service/pkg/errors"
 )
 
 var eventRegistry = make(map[EventType]reflect.Type)
@@ -14,7 +15,7 @@ func RegisterEvent(eventType EventType, event interface{}) {
 func CreateEvent(eventType EventType) (interface{}, error) {
 	t, ok := eventRegistry[eventType]
 	if !ok {
-		return nil, fmt.Errorf("unknown event type: %s", eventType)
+		return nil, errors.NewInternalError("unregistered event type").WithContext("event_type", eventType)
 	}
 	return reflect.New(t).Interface(), nil
 }
