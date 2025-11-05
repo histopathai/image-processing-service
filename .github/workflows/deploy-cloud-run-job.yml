@@ -51,7 +51,6 @@ jobs:
           gcloud run jobs deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE_TAG }} \
             --region=${{ secrets.GCP_REGION }} \
-            --service-account=image-processing-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
             --max-retries=3 \
             --task-timeout=3600 \
             --parallelism=1 \
