@@ -10,7 +10,7 @@ on:
 env:
   SERVICE_NAME: image-processing-service
   GAR_LOCATION: ${{ secrets.GCP_REGION }}
-  GAR_REPOSITORY: histopathai
+  GAR_REPOSITORY: histopath-docker-repo
 
 jobs:
   deploy:
