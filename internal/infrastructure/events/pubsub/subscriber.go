@@ -2,11 +2,11 @@ package pubsub
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/histopathai/image-processing-service/internal/domain/events"
+	"github.com/histopathai/image-processing-service/pkg/errors"
 )
 
 type Subscriber struct {
@@ -46,7 +46,7 @@ func (s *Subscriber) Subscribe(ctx context.Context, subscription string, handler
 
 	if err != nil && err != context.Canceled {
 		s.logger.Error("Subscriber Receive returned error", "error", err)
-		return fmt.Errorf("pubsub.Receive: %w", err)
+		return errors.NewInternalError("pubsub.Receive failed").WithContext("error", err)
 	}
 
 	s.logger.Info("Subscriber stopped.")
