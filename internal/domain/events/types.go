@@ -42,7 +42,6 @@ func NewImageProcessingRequestedEvent(imageID, originPath string) ImageProcessin
 	}
 }
 
-// YENİ: İşleme tamamlandı eventi
 type ImageProcessingCompletedEvent struct {
 	BaseEvent
 	ImageID       string `json:"image-id"`
