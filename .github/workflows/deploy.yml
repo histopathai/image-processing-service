@@ -55,7 +55,7 @@ jobs:
             --set-env-vars="OVERLAP=0" \
             --set-env-vars="QUALITY=85" \
             --set-env-vars="DZI_LAYOUT=dz" \
-            --set-env-vars="DZI_SUFFIX=jpeg" \
+            --set-env-vars="DZI_SUFFIX=jpg" \
             --set-env-vars="THUMBNAIL_SIZE=256" \
             --set-env-vars="THUMBNAIL_QUALITY=90"
 
