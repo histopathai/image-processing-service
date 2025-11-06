@@ -1,4 +1,4 @@
-name: Deploy Image Processing Service to Cloud Run Job
+name: Deploy Image Processing Service to Cloud Run
 
 on:
   push:
@@ -42,29 +42,34 @@ jobs:
           
           docker build -t $IMAGE_TAG -t $IMAGE_LATEST .
           docker push $IMAGE_TAG
-          docker push $IMAGE_LATEST
+          docker push $IMAGE_LATES
           
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
-      - name: Deploy to Cloud Run Job
+      - name: Deploy to Cloud Run Service (as an Event-Driven Job)
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE_TAG }} \
             --region=${{ secrets.GCP_REGION }} \
-            --set-env-vars="APP_ENV=PROD" \
-            --set-env-vars="PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
-            --set-env-vars="GCS_ORIGINAL_BUCKET_NAME=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
-            --set-env-vars="GCS_PROCESSED_BUCKET_NAME=${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --set-env-vars="IMAGE_PROCESSING_SUB_ID=${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }}" \
-            --set-env-vars="IMAGE_PROCESS_RESULT_TOPIC_ID=${{ secrets.GCP_IMAGE_PROCESS_RESULT_TOPIC_ID }}" \
-            --set-env-vars="INPUT_MOUNT_PATH=/mnt/input" \
-            --set-env-vars="OUTPUT_MOUNT_PATH=/mnt/output" \
-            --set-env-vars="LOG_LEVEL=INFO" \
-            --set-env-vars="LOG_FORMAT=json" \
-            --set-env-vars="TILE_SIZE=256" \
-            --set-env-vars="OVERLAP=0" \
-            --set-env-vars="QUALITY=85" \
-            --set-env-vars="DZI_LAYOUT=dz" \
-            --set-env-vars="DZI_SUFFIX=jpeg" \
-            --set-env-vars="THUMBNAIL_SIZE=256" \
-            --set-env-vars="THUMBNAIL_QUALITY=90"
+            --no-allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=5 \
+            --add-gcs-bucket="bucket=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }},read-only=true" \
+            --add-gcs-bucket="bucket=${{ secrets.GCS_PROCESSED_BUCKET_NAME }},read-write=true" \
+            --update-env-vars="APP_ENV=PROD" \
+            --update-env-vars="PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
+            --update-env-vars="GCS_ORIGINAL_BUCKET_NAME=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
+            --update-env-vars="GCS_PROCESSED_BUCKET_NAME=${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
+            --update-env-vars="IMAGE_PROCESSING_SUB_ID=${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }}" \
+            --update-env-vars="IMAGE_PROCESS_RESULT_TOPIC_ID=${{ secrets.GCP_IMAGE_PROCESS_RESULT_TOPIC_ID }}" \
+            --update-env-vars="INPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
+            --update-env-vars="OUTPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
+            --update-env-vars="LOG_LEVEL=INFO" \
+            --update-env-vars="LOG_FORMAT=json" \
+            --update-env-vars="TILE_SIZE=256" \
+            --update-env-vars="OVERLAP=0" \
+            --update-env-vars="QUALITY=85" \
+            --update-env-vars="DZI_LAYOUT=dz" \
+            --update-env-vars="DZI_SUFFIX=jpeg" \
+            --update-env-vars="THUMBNAIL_SIZE=256" \
+            --update-env-vars="THUMBNAIL_QUALITY=90"
