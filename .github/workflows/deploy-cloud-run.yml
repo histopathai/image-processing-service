@@ -51,6 +51,7 @@ jobs:
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE_TAG }} \
             --region=${{ secrets.GCP_REGION }} \
+            --generation=gen2 \
             --no-allow-unauthenticated \
             --min-instances=0 \
             --max-instances=5 \
