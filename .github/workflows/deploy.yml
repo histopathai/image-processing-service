@@ -33,31 +33,11 @@ jobs:
             --add-volume=name=output-bucket,type=cloud-storage,bucket=${{ secrets.GCS_PROCESSED_BUCKET_NAME }} \
             --add-volume-mount=volume=input-bucket,mount-path="/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
             --add-volume-mount=volume=output-bucket,mount-path="/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --update-env-vars="APP_ENV=PROD" \
-            --update-env-vars="PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
-            --update-env-vars="GCS_ORIGINAL_BUCKET_NAME=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
-            --update-env-vars="GCS_PROCESSED_BUCKET_NAME=${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --update-env-vars="IMAGE_PROCESSING_SUB_ID=${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }}" \
-            --update-env-vars="IMAGE_PROCESS_RESULT_TOPIC_ID=${{ secrets.GCP_IMAGE_PROCESS_RESULT_TOPIC_ID }}" \
-            --update-env-vars="INPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
-            --update-env-vars="OUTPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --update-env-vars="LOG_LEVEL=INFO" \
-            --update-env-vars="LOG_FORMAT=json" \
-            --update-env-vars="TILE_SIZE=256" \
-            --update-env-vars="OVERLAP=0" \
-            --update-env-vars="QUALITY=85" \
-            --update-env-vars="DZI_LAYOUT=dz" \
-            --update-env-vars="DZI_SUFFIX=jpeg" \
-            --update-env-vars="THUMBNAIL_SIZE=256" \
-            --update-env-vars="THUMBNAIL_QUALITY=90"
+            --update-env-vars="APP_ENV=PROD,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},GCS_ORIGINAL_BUCKET_NAME=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }},GCS_PROCESSED_BUCKET_NAME=${{ secrets.GCS_PROCESSED_BUCKET_NAME }},IMAGE_PROCESSING_SUB_ID=${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }},IMAGE_PROCESS_RESULT_TOPIC_ID=${{ secrets.GCP_IMAGE_PROCESS_RESULT_TOPIC_ID }},INPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }},OUTPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }},LOG_LEVEL=INFO,LOG_FORMAT=json,TILE_SIZE=256,OVERLAP=0,QUALITY=85,DZI_LAYOUT=dz,DZI_SUFFIX=jpeg,THUMBNAIL_SIZE=256,THUMBNAIL_QUALITY=90"
 
-      - name: Install gcloud Eventarc Component
-        run: |
-            gcloud components install eventarc --quiet
-      
       - name: Create or Update Eventarc Trigger
         run: |
-            gcloud events triggers update image-processor-trigger \
+          gcloud eventarc triggers update image-processor-trigger \
             --location=${{ secrets.GCP_REGION }} \
             --destination-run-job=${{ env.JOB_NAME }} \
             --destination-run-region=${{ secrets.GCP_REGION }} \
