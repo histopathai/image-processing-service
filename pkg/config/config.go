@@ -73,8 +73,7 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 	overlap, _ := strconv.Atoi(getEnv("OVERLAP", "0"))
 	quality, _ := strconv.Atoi(getEnv("QUALITY", "85"))
 	layout := getEnv("DZI_LAYOUT", "dz")
-	suffix := getEnv("DZI_SUFFIX", "jpeg")
-
+	suffix := getEnv("DZI_SUFFIX", "jpg")
 	dziConfig := DZIConfig{
 		TileSize: tileSize,
 		Overlap:  overlap,
