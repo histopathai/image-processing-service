@@ -1,10 +1,6 @@
 name: Build Image Processing Service
 
 on:
-  push:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
 
 env:

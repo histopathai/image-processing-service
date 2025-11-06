@@ -1,10 +1,6 @@
 name: Deploy Image Processing Job
 
 on:
-  push:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
 
 env:
