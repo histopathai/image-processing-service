@@ -22,7 +22,7 @@ FROM debian:bullseye-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libvips-tools \
-    libopenslide-bin \
+    openslide-tools \
     libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
 
