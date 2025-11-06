@@ -15,6 +15,7 @@ import (
 
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/container"
+	"github.com/histopathai/image-processing-service/pkg/errors"
 	"github.com/histopathai/image-processing-service/pkg/logger"
 )
 
@@ -178,9 +179,26 @@ func pubsubHandler(cnt *container.Container, logger *slog.Logger) http.HandlerFu
 
 		err = cnt.ImageHandlerService.HandleImageProcessingRequest(ctx, decodedData, attributes)
 		if err != nil {
-			logger.Error("Failed to process image", "error", err)
-			// Return 500 so Pub/Sub will retry
-			http.Error(w, fmt.Sprintf("Processing failed: %v", err), http.StatusInternalServerError)
+			logger.Error("Failed to process image",
+				"message_id", msg.Message.MessageID,
+				"image_id", attributes["image_id"],
+				"error", err,
+			)
+
+			// Check if the error is non-retryable
+			if errors.IsNonRetryable(err) {
+				// ACK the message by returning 200 OK.
+				// The handler service has already published a failure event.
+				logger.Warn("Acknowledging non-retryable error to stop Pub/Sub retry loop",
+					"message_id", msg.Message.MessageID,
+					"image_id", attributes["image_id"],
+				)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("OK: Acknowledged non-retryable error"))
+			} else {
+				// NACK the message by returning 500. Pub/Sub will retry.
+				http.Error(w, fmt.Sprintf("Processing failed, will retry: %v", err), http.StatusInternalServerError)
+			}
 			return
 		}
 
