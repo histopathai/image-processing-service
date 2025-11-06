@@ -48,7 +48,7 @@ jobs:
 
       - name: Deploy to Cloud Run Service (as an Event-Driven Job)
         run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
+          gcloud beta run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE_TAG }} \
             --region=${{ secrets.GCP_REGION }} \
             --generation=gen2 \
