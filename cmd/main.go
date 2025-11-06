@@ -4,19 +4,27 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
+	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/container"
 	"github.com/histopathai/image-processing-service/pkg/logger"
 )
 
-type CloudEventPayload struct {
+type PubSubMessage struct {
 	Message struct {
 		Data       string            `json:"data"`
 		Attributes map[string]string `json:"attributes"`
+		MessageID  string            `json:"messageId"`
 	} `json:"message"`
+	Subscription string `json:"subscription"`
 }
 
 func main() {
@@ -43,7 +51,6 @@ func main() {
 	appLogger.Info("Configuration loaded",
 		"env", cfg.Env,
 		"project_id", cfg.GCP.ProjectID,
-		"subscription_id", cfg.PubSubConfig.ImageProcessingSubID,
 	)
 
 	// Create context
@@ -63,45 +70,127 @@ func main() {
 
 	appLogger.Info("Container initialized successfully")
 
-	ceDataEnv := os.Getenv("CE_DATA")
-	if ceDataEnv == "" {
-		appLogger.Error("CE_DATA environment variable not found. Job must be triggered by Eventarc.")
-		log.Fatal("CE_DATA environment variable not found.")
+	// Setup HTTP handlers
+	http.HandleFunc("/health", healthHandler(appLogger))
+	http.HandleFunc("/", pubsubHandler(cnt, appLogger))
+
+	// Get port from environment or use default
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
-	decodedCloudEvent, err := base64.StdEncoding.DecodeString(ceDataEnv)
-	if err != nil {
-		appLogger.Error("Failed to decode CE_DATA (Base64)", "error", err)
-		log.Fatalf("Failed to decode CE_DATA: %v", err)
+	// Create HTTP server
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      http.DefaultServeMux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
-	var payload CloudEventPayload
-	if err := json.Unmarshal(decodedCloudEvent, &payload); err != nil {
-		appLogger.Error("Failed to unmarshal CloudEvent JSON", "error", err, "data", string(decodedCloudEvent))
-		log.Fatalf("Failed to unmarshal CloudEvent JSON: %v", err)
+	// Start server in a goroutine
+	go func() {
+		appLogger.Info("Starting HTTP server", "port", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			appLogger.Error("Server failed", "error", err)
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	appLogger.Info("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		appLogger.Error("Server forced to shutdown", "error", err)
 	}
 
-	actualEventData, err := base64.StdEncoding.DecodeString(payload.Message.Data)
-	if err != nil {
-		appLogger.Error("Failed to decode inner Pub/Sub message data (Base64)", "error", err)
-		log.Fatalf("Failed to decode inner Pub/Sub message data: %v", err)
+	appLogger.Info("Server exited")
+}
+
+// healthHandler returns a simple health check endpoint
+func healthHandler(logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "healthy",
+			"time":   time.Now().Format(time.RFC3339),
+		})
 	}
+}
 
-	attributes := payload.Message.Attributes
-	if attributes == nil {
-		attributes = make(map[string]string)
+// pubsubHandler handles incoming Pub/Sub push messages
+func pubsubHandler(cnt *container.Container, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Only accept POST requests
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		ctx := r.Context()
+
+		// Parse the Pub/Sub message
+		var msg PubSubMessage
+		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+			logger.Error("Failed to decode Pub/Sub message", "error", err)
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		logger.Info("Received Pub/Sub message",
+			"message_id", msg.Message.MessageID,
+			"subscription", msg.Subscription,
+		)
+
+		// Decode the base64 encoded data
+		decodedData, err := base64.StdEncoding.DecodeString(msg.Message.Data)
+		if err != nil {
+			logger.Error("Failed to decode message data", "error", err)
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+
+		attributes := msg.Message.Attributes
+		if attributes == nil {
+			attributes = make(map[string]string)
+		}
+
+		// Process the image
+		logger.Info("Processing image request",
+			"event_type", attributes["event_type"],
+			"image_id", attributes["image_id"],
+		)
+
+		err = cnt.ImageHandlerService.HandleImageProcessingRequest(ctx, decodedData, attributes)
+		if err != nil {
+			logger.Error("Failed to process image", "error", err)
+			// Return 500 so Pub/Sub will retry
+			http.Error(w, fmt.Sprintf("Processing failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		logger.Info("Successfully processed image",
+			"message_id", msg.Message.MessageID,
+			"image_id", attributes["image_id"],
+		)
+
+		// Return 200 to acknowledge the message
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	}
-
-	appLogger.Info("Calling image processing handler",
-		"event_type", attributes["event_type"],
-		"image_id", attributes["image_id"],
-	)
-	err = cnt.ImageHandlerService.HandleImageProcessingRequest(ctx, actualEventData, attributes)
-	if err != nil {
-		appLogger.Error("Image processing handler failed", "error", err)
-		log.Fatalf("Image processing handler failed: %v", err)
-	}
-
-	appLogger.Info("Image Processing Job completed successfully")
-
 }
