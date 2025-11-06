@@ -90,6 +90,14 @@ func (ip *ImageProcessor) runVipsHeaderField(ctx context.Context, inputPath stri
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+
+		vipsErrOutput := string(output)
+		ip.logger.Error("vipsheader command failed",
+			"file_path", inputPath,
+			"field", fieldName,
+			"error", err,
+			"vips_output", vipsErrOutput, // This will show the exact error from vips
+		)
 		return "", errors.NewInternalError("vips header failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
 	}
 
