@@ -79,26 +79,26 @@ func (ip *ImageProcessor) GetImageInfo(ctx context.Context, file *model.File) er
 }
 
 func (ip *ImageProcessor) runVipsHeaderField(ctx context.Context, inputPath string, fieldName string) (string, error) {
+
 	args := []string{
-		"vipsheader",
 		"-f",
 		fieldName,
 		inputPath,
 	}
 
-	cmd := exec.CommandContext(ctx, "vips", args...)
+	ip.logger.Debug("Running vipsheader", "command", "vipsheader "+strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, "vipsheader", args...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-
 		vipsErrOutput := string(output)
 		ip.logger.Error("vipsheader command failed",
 			"file_path", inputPath,
 			"field", fieldName,
 			"error", err,
-			"vips_output", vipsErrOutput, // This will show the exact error from vips
+			"vips_output", vipsErrOutput,
 		)
-		return "", errors.NewInternalError("vips header failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
+		return "", errors.NewInternalError("vips header failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), vipsErrOutput))
 	}
 
 	return strings.TrimSpace(string(output)), nil
@@ -107,17 +107,17 @@ func (ip *ImageProcessor) runVipsHeaderField(ctx context.Context, inputPath stri
 func (ip *ImageProcessor) ExtractThumbnail(ctx context.Context, inputPath, outputPath string, width, height int, quality int) error {
 	sizeStr := fmt.Sprintf("%d", width)
 	heightStr := fmt.Sprintf("%d", height)
-	qualityStr := fmt.Sprintf("%d", quality)
+
+	outputWithQuality := fmt.Sprintf("%s[Q=%d]", outputPath, quality)
 
 	args := []string{
 		"thumbnail",
 		inputPath,
-		outputPath,
+		outputWithQuality,
 		sizeStr,
 		"--height", heightStr,
 		"--size", "down",
 		"--auto-rotate",
-		"--Q", qualityStr,
 	}
 
 	cmd := exec.CommandContext(ctx, "vips", args...)
