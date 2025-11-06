@@ -51,6 +51,10 @@ jobs:
             --update-env-vars="THUMBNAIL_SIZE=256" \
             --update-env-vars="THUMBNAIL_QUALITY=90"
 
+      - name: Install gcloud Eventarc Component
+        run: |
+            gcloud components install eventarc --quiet
+      
       - name: Create or Update Eventarc Trigger
         run: |
             gcloud events triggers update image-processor-trigger \
