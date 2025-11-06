@@ -177,3 +177,29 @@ func NewConfigurationError(message string) *AppError {
 func WrapConfigurationError(err error, message string) *AppError {
 	return Wrap(err, ErrorTypeConfiguration, message)
 }
+
+func IsNonRetryable(err error) bool {
+	var appErr *AppError
+	if !errors.As(err, &appErr) {
+		return false
+	}
+
+	switch appErr.Type {
+	case ErrorTypeValidation,
+		ErrorTypeNotFound,
+		ErrorTypeAlreadyExists,
+		ErrorTypeProcessing,
+		ErrorTypeConfiguration,
+		ErrorTypeInternal:
+		return true
+
+	case ErrorTypeStorage,
+		ErrorTypeMessaging,
+		ErrorTypeExternal,
+		ErrorTypeTimeout:
+		return false
+
+	default:
+		return false
+	}
+}
