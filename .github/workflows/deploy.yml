@@ -32,7 +32,7 @@ jobs:
             --allow-unauthenticated \
             --port=8080 \
             --cpu=2 \
-            --memory=4Gi \
+            --memory=8Gi \
             --timeout=3600 \
             --concurrency=10 \
             --min-instances=0 \
