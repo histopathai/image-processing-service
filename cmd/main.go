@@ -2,16 +2,22 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/container"
 	"github.com/histopathai/image-processing-service/pkg/logger"
 )
+
+type CloudEventPayload struct {
+	Message struct {
+		Data       string            `json:"data"`
+		Attributes map[string]string `json:"attributes"`
+	} `json:"message"`
+}
 
 func main() {
 	// Initialize basic logger for startup
@@ -40,9 +46,8 @@ func main() {
 		"subscription_id", cfg.PubSubConfig.ImageProcessingSubID,
 	)
 
-	// Create context with cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create context
+	ctx := context.Background()
 
 	// Initialize container
 	cnt, err := container.New(ctx, cfg, appLogger)
@@ -58,54 +63,45 @@ func main() {
 
 	appLogger.Info("Container initialized successfully")
 
-	// Setup signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	ceDataEnv := os.Getenv("CE_DATA")
+	if ceDataEnv == "" {
+		appLogger.Error("CE_DATA environment variable not found. Job must be triggered by Eventarc.")
+		log.Fatal("CE_DATA environment variable not found.")
+	}
 
-	// Start subscriber in a goroutine
-	errChan := make(chan error, 1)
-	go func() {
-		appLogger.Info("Starting subscriber",
-			"subscription_id", cfg.PubSubConfig.ImageProcessingSubID,
-		)
+	decodedCloudEvent, err := base64.StdEncoding.DecodeString(ceDataEnv)
+	if err != nil {
+		appLogger.Error("Failed to decode CE_DATA (Base64)", "error", err)
+		log.Fatalf("Failed to decode CE_DATA: %v", err)
+	}
 
-		err := cnt.Subscriber.Subscribe(
-			ctx,
-			cfg.PubSubConfig.ImageProcessingSubID,
-			cnt.ImageHandlerService.HandleImageProcessingRequest,
-		)
-		if err != nil {
-			appLogger.Error("Subscriber error", "error", err)
-			errChan <- err
-		}
-	}()
+	var payload CloudEventPayload
+	if err := json.Unmarshal(decodedCloudEvent, &payload); err != nil {
+		appLogger.Error("Failed to unmarshal CloudEvent JSON", "error", err, "data", string(decodedCloudEvent))
+		log.Fatalf("Failed to unmarshal CloudEvent JSON: %v", err)
+	}
 
-	appLogger.Info("Image Processing Service is running",
-		"subscription_id", cfg.PubSubConfig.ImageProcessingSubID,
-		"topic_id", cfg.PubSubConfig.ImageProcessResultTopicID,
+	actualEventData, err := base64.StdEncoding.DecodeString(payload.Message.Data)
+	if err != nil {
+		appLogger.Error("Failed to decode inner Pub/Sub message data (Base64)", "error", err)
+		log.Fatalf("Failed to decode inner Pub/Sub message data: %v", err)
+	}
+
+	attributes := payload.Message.Attributes
+	if attributes == nil {
+		attributes = make(map[string]string)
+	}
+
+	appLogger.Info("Calling image processing handler",
+		"event_type", attributes["event_type"],
+		"image_id", attributes["image_id"],
 	)
-
-	// Wait for shutdown signal or error
-	select {
-	case sig := <-sigChan:
-		appLogger.Info("Received shutdown signal", "signal", sig)
-	case err := <-errChan:
-		appLogger.Error("Service error", "error", err)
+	err = cnt.ImageHandlerService.HandleImageProcessingRequest(ctx, actualEventData, attributes)
+	if err != nil {
+		appLogger.Error("Image processing handler failed", "error", err)
+		log.Fatalf("Image processing handler failed: %v", err)
 	}
 
-	// Graceful shutdown
-	appLogger.Info("Shutting down gracefully...")
+	appLogger.Info("Image Processing Job completed successfully")
 
-	// Stop subscriber
-	if err := cnt.Subscriber.Stop(); err != nil {
-		appLogger.Error("Error stopping subscriber", "error", err)
-	}
-
-	// Give some time for in-flight messages to complete
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
-
-	<-shutdownCtx.Done()
-
-	appLogger.Info("Image Processing Service stopped")
 }
