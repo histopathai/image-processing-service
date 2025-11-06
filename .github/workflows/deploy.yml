@@ -1,10 +1,10 @@
-name: Deploy Image Processing Job
+name: Deploy Image Processing Service
 
 on:
   workflow_dispatch:
 
 env:
-  JOB_NAME: image-processing-service
+  SERVICE_NAME: image-processing-service
   GAR_LOCATION: ${{ secrets.GCP_REGION }}
   GAR_REPOSITORY: histopath-docker-repo
 
@@ -23,29 +23,66 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Deploy to Cloud Run Job
+      - name: Deploy to Cloud Run Service
         run: |
-          gcloud run jobs deploy ${{ env.JOB_NAME }} \
-            --image=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.JOB_NAME }}:latest \
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.SERVICE_NAME }}:latest \
             --region=${{ secrets.GCP_REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --cpu=2 \
+            --memory=4Gi \
+            --timeout=3600 \
+            --concurrency=10 \
+            --min-instances=0 \
+            --max-instances=10 \
             --add-volume=name=input-bucket,type=cloud-storage,bucket=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }},readonly=true \
             --add-volume=name=output-bucket,type=cloud-storage,bucket=${{ secrets.GCS_PROCESSED_BUCKET_NAME }} \
             --add-volume-mount=volume=input-bucket,mount-path="/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
             --add-volume-mount=volume=output-bucket,mount-path="/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --update-env-vars="APP_ENV=PROD" \
-            --update-env-vars="PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
-            --update-env-vars="GCS_ORIGINAL_BUCKET_NAME=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
-            --update-env-vars="GCS_PROCESSED_BUCKET_NAME=${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --update-env-vars="IMAGE_PROCESSING_SUB_ID=${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }}" \
-            --update-env-vars="IMAGE_PROCESS_RESULT_TOPIC_ID=${{ secrets.GCP_IMAGE_PROCESS_RESULT_TOPIC_ID }}" \
-            --update-env-vars="INPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
-            --update-env-vars="OUTPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
-            --update-env-vars="LOG_LEVEL=INFO" \
-            --update-env-vars="LOG_FORMAT=json" \
-            --update-env-vars="TILE_SIZE=256" \
-            --update-env-vars="OVERLAP=0" \
-            --update-env-vars="QUALITY=85" \
-            --update-env-vars="DZI_LAYOUT=dz" \
-            --update-env-vars="DZI_SUFFIX=jpeg" \
-            --update-env-vars="THUMBNAIL_SIZE=256" \
-            --update-env-vars="THUMBNAIL_QUALITY=90"
+            --set-env-vars="APP_ENV=PROD" \
+            --set-env-vars="PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}" \
+            --set-env-vars="GCS_ORIGINAL_BUCKET_NAME=${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
+            --set-env-vars="GCS_PROCESSED_BUCKET_NAME=${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
+            --set-env-vars="IMAGE_PROCESSING_SUB_ID=${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }}" \
+            --set-env-vars="IMAGE_PROCESS_RESULT_TOPIC_ID=${{ secrets.GCP_IMAGE_PROCESS_RESULT_TOPIC_ID }}" \
+            --set-env-vars="INPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_ORIGINAL_BUCKET_NAME }}" \
+            --set-env-vars="OUTPUT_MOUNT_PATH=/gcs/${{ secrets.GCS_PROCESSED_BUCKET_NAME }}" \
+            --set-env-vars="LOG_LEVEL=INFO" \
+            --set-env-vars="LOG_FORMAT=json" \
+            --set-env-vars="TILE_SIZE=256" \
+            --set-env-vars="OVERLAP=0" \
+            --set-env-vars="QUALITY=85" \
+            --set-env-vars="DZI_LAYOUT=dz" \
+            --set-env-vars="DZI_SUFFIX=jpeg" \
+            --set-env-vars="THUMBNAIL_SIZE=256" \
+            --set-env-vars="THUMBNAIL_QUALITY=90"
+
+      - name: Get Service URL
+        id: get-url
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ secrets.GCP_REGION }} \
+            --format='value(status.url)')
+          echo "Service URL: $SERVICE_URL"
+          echo "service_url=$SERVICE_URL" >> $GITHUB_OUTPUT
+
+      - name: Configure Pub/Sub Push Subscription
+        run: |
+          SERVICE_URL="${{ steps.get-url.outputs.service_url }}"
+          
+          # Check if subscription exists
+          if gcloud pubsub subscriptions describe ${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }} --project=${{ secrets.GCP_PROJECT_ID }} 2>/dev/null; then
+            echo "Updating existing subscription..."
+            gcloud pubsub subscriptions update ${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }} \
+              --push-endpoint="${SERVICE_URL}/" \
+              --project=${{ secrets.GCP_PROJECT_ID }}
+          else
+            echo "Creating new push subscription..."
+            gcloud pubsub subscriptions create ${{ secrets.GCP_IMAGE_PROCESSING_SUB_ID }} \
+              --topic=image-processing-requests \
+              --push-endpoint="${SERVICE_URL}/" \
+              --ack-deadline=600 \
+              --project=${{ secrets.GCP_PROJECT_ID }}
+          fi
