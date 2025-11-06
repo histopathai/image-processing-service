@@ -19,10 +19,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o image-processing-
 # Runtime stage with libvips
 FROM debian:bullseye-slim
 
-# Install dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libvips-tools \
+    libopenslide-bin \
+    libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder
