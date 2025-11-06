@@ -19,8 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o image-processing-
 # Runtime stage with libvips
 FROM debian:bullseye-slim
 
-# Install dependencies (SADECE libvips-tools GEREKLİ)
-# gcsfuse, fuse ve libvips-dev kaldırıldı
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libvips-tools \
@@ -31,5 +30,8 @@ COPY --from=builder /app/image-processing-service /app/image-processing-service
 
 WORKDIR /app
 
-# Sadece uygulamayı çalıştır
+# Expose port 8080 for Cloud Run
+EXPOSE 8080
+
+# Run the service
 CMD ["/app/image-processing-service"]
