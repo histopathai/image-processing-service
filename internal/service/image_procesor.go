@@ -171,15 +171,18 @@ func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File) er
 }
 
 func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string, outputPathBase string) error {
+	// DÜZELTME: Kalite ayarı --Q bayrağıyla değil, suffix'e eklenerek yapılır.
+	// Örn: .jpg[Q=85]
+	suffixWithQuality := fmt.Sprintf("%s[Q=%d]", ip.cfg.Suffix, ip.cfg.Quality)
+
 	args := []string{
 		"dzsave",
 		inputPath,
 		outputPathBase,
 		"--layout", ip.cfg.Layout,
-		"--suffix", ip.cfg.Suffix,
+		"--suffix", suffixWithQuality,
 		"--tile-size", fmt.Sprintf("%d", ip.cfg.TileSize),
 		"--overlap", fmt.Sprintf("%d", ip.cfg.Overlap),
-		"--Q", fmt.Sprintf("%d", ip.cfg.Quality),
 		"--background", "255",
 		"--depth", "onetile",
 	}
@@ -197,8 +200,7 @@ func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string
 			"error", err,
 			"vips_output", vipsErrOutput,
 		)
-
-		return errors.NewInternalError("vips dzisave failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
+		return errors.NewInternalError("vips dzisave failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), vipsErrOutput))
 	}
 
 	return nil
