@@ -171,8 +171,6 @@ func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File) er
 }
 
 func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string, outputPathBase string) error {
-	// DÜZELTME: Kalite ayarı --Q bayrağıyla değil, suffix'e eklenerek yapılır.
-	// Örn: .jpg[Q=85]
 	suffixWithQuality := fmt.Sprintf("%s[Q=%d]", ip.cfg.Suffix, ip.cfg.Quality)
 
 	args := []string{
