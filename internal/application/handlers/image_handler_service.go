@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	appEvents "github.com/histopathai/image-processing-service/internal/application/events"
@@ -118,15 +121,20 @@ func (h *ImageHandlerService) processImage(
 
 	outputBaseName := filepath.Base(requestEvent.OriginPath)
 	outputBaseName = outputBaseName[:len(outputBaseName)-len(filepath.Ext(outputBaseName))]
-	outputDir := filepath.Join(h.cfg.MountPath.OutputMountPath, requestEvent.ImageID)
-	outputPathBase := filepath.Join(outputDir, outputBaseName)
 
-	file.ProcessedPath = &outputPathBase
+	localTempDir := filepath.Join("/tmp", requestEvent.ImageID)
+	if err := os.MkdirAll(localTempDir, os.ModePerm); err != nil {
+		h.logger.Error("Failed to create local temp directory", "error", err, "path", localTempDir)
+		return pkgErrors.WrapProcessingError(err, "failed to create local temp directory")
+	}
+	defer os.RemoveAll(localTempDir)
 
-	h.logger.Info("Starting DZI processing",
+	localOutputPathBase := filepath.Join(localTempDir, outputBaseName)
+	file.ProcessedPath = &localOutputPathBase
+
+	h.logger.Info("Starting DZI processing (local)",
 		"image_id", file.ID,
-		"input_path", inputPath,
-		"output_path", outputPathBase,
+		"output_path_base", localOutputPathBase,
 	)
 
 	if err := h.processor.DZIProcessor(ctx, file); err != nil {
@@ -134,21 +142,49 @@ func (h *ImageHandlerService) processImage(
 		return pkgErrors.WrapProcessingError(err, "failed to process DZI")
 	}
 
-	thumbnailPath := filepath.Join(outputDir, "thumbnail.jpg")
-	h.logger.Info("Creating thumbnail",
+	localThumbnailPath := filepath.Join(localTempDir, "thumbnail.jpg")
+	h.logger.Info("Creating thumbnail (local)",
 		"image_id", file.ID,
-		"thumbnail_path", thumbnailPath,
+		"thumbnail_path", localThumbnailPath,
 	)
 
 	if err := h.processor.ExtractThumbnail(
 		ctx,
 		inputPath,
-		thumbnailPath,
+		localThumbnailPath,
 		h.cfg.ThumbnailConfig.Width,
 		h.cfg.ThumbnailConfig.Height,
 		h.cfg.ThumbnailConfig.Quality,
 	); err != nil {
 		h.logger.Warn("Failed to create thumbnail (continuing anyway)", "error", err)
+	}
+
+	finalGCSOutputDir := filepath.Join(h.cfg.MountPath.OutputMountPath, requestEvent.ImageID)
+
+	if err := os.MkdirAll(finalGCSOutputDir, os.ModePerm); err != nil {
+		h.logger.Error("Failed to create final GCS output directory", "error", err, "path", finalGCSOutputDir)
+		return pkgErrors.WrapProcessingError(err, "failed to create final GCS output directory")
+	}
+
+	localDziFile := localOutputPathBase + ".dzi"
+	gcsDziFile := filepath.Join(finalGCSOutputDir, outputBaseName+".dzi")
+	if err := copyFile(localDziFile, gcsDziFile); err != nil {
+		h.logger.Error("Failed to copy .dzi file to GCS", "error", err, "src", localDziFile, "dst", gcsDziFile)
+		return pkgErrors.WrapProcessingError(err, "failed to copy .dzi file")
+	}
+
+	localDziDir := localOutputPathBase + "_files"
+	gcsDziDir := filepath.Join(finalGCSOutputDir, outputBaseName+"_files")
+	if err := copyDirectory(localDziDir, gcsDziDir); err != nil {
+		h.logger.Error("Failed to copy _files directory to GCS", "error", err, "src", localDziDir, "dst", gcsDziDir)
+		return pkgErrors.WrapProcessingError(err, "failed to copy _files directory")
+	}
+
+	if _, err := os.Stat(localThumbnailPath); !os.IsNotExist(err) {
+		gcsThumbnailPath := filepath.Join(finalGCSOutputDir, "thumbnail.jpg")
+		if err := copyFile(localThumbnailPath, gcsThumbnailPath); err != nil {
+			h.logger.Warn("Failed to copy thumbnail to GS", "error", err, "src", localThumbnailPath, "dst", gcsThumbnailPath)
+		}
 	}
 
 	relativeOutputPath := filepath.Join(requestEvent.ImageID, outputBaseName)
@@ -173,10 +209,64 @@ func (h *ImageHandlerService) processImage(
 
 	h.logger.Info("Image processing completed successfully",
 		"image_id", requestEvent.ImageID,
-		"width", *file.Width,
-		"height", *file.Height,
-		"size", *file.Size,
+		"final_destination", finalGCSOutputDir,
 	)
 
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("could not open source file %s: %w", src, err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("could not create destination file %s: %w", dst, err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("could not copy from %s to %s: %w", src, dst, err)
+	}
+
+	srcInfo, err := os.Stat(src)
+	if err == nil {
+		os.Chmod(dst, srcInfo.Mode())
+	}
+
+	return nil
+}
+
+func copyDirectory(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDirectory(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
