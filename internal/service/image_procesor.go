@@ -190,6 +190,14 @@ func (ip *ImageProcessor) vipsDZIProcessor(ctx context.Context, inputPath string
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		vipsErrOutput := string(output)
+		ip.logger.Error("vips dzsave command failed",
+			"file_path", inputPath,
+			"output_base", outputPathBase,
+			"error", err,
+			"vips_output", vipsErrOutput,
+		)
+
 		return errors.NewInternalError("vips dzisave failed").WithContext("error", fmt.Sprintf("%s | Output: %s", err.Error(), string(output)))
 	}
 
