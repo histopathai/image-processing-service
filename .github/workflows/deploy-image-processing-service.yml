@@ -6,7 +6,7 @@ on:
       - main
       - dev
     paths:
-      - 'image-processing-service/**'
+      - '**'
       - '.github/workflows/deploy-image-processing-service.yml'
   workflow_dispatch:
     inputs:
@@ -47,14 +47,12 @@ jobs:
           fi
           
           echo "environment=${ENV}" >> $GITHUB_OUTPUT
+          echo "🌍 Environment: ${ENV}"
 
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     needs: setup
-    defaults:
-      run:
-        working-directory: ./image-processing-service
     env:
       ENVIRONMENT: ${{ needs.setup.outputs.environment }}
       WIF_PROVIDER: ${{ (needs.setup.outputs.environment == 'prod') && secrets.WIF_PROVIDER_PROD || secrets.WIF_PROVIDER_DEV }}
@@ -82,6 +80,10 @@ jobs:
           echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
           echo "project_number=${PROJECT_NUMBER}" >> $GITHUB_OUTPUT
           echo "region=${REGION}" >> $GITHUB_OUTPUT
+          
+          echo "📦 Project ID: ${PROJECT_ID}"
+          echo "🔢 Project Number: ${PROJECT_NUMBER}"
+          echo "🌍 Region: ${REGION}"
 
       - name: Configure Docker for Artifact Registry
         run: |
@@ -96,7 +98,6 @@ jobs:
         run: go test -v ./...
 
       - name: Build Docker Image
-        id: build
         run: |
           IMAGE_TAG="${{ steps.gcp-info.outputs.region }}-docker.pkg.dev/${{ steps.gcp-info.outputs.project_id }}/${{ secrets.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.REPO_NAME }}:${{ github.sha }}"
           IMAGE_LATEST="${{ steps.gcp-info.outputs.region }}-docker.pkg.dev/${{ steps.gcp-info.outputs.project_id }}/${{ secrets.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.REPO_NAME }}:latest"
@@ -109,6 +110,7 @@ jobs:
             .
           
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "🐳 Built image: ${IMAGE_TAG}"
 
       - name: Push Docker Image
         run: |
@@ -119,6 +121,8 @@ jobs:
           docker push ${IMAGE_TAG}
           docker push ${IMAGE_LATEST}
           docker push ${IMAGE_ENV}
+          
+          echo "🚀 Pushed all image tags"
 
       - name: Output Image Info
         id: image-info
@@ -143,10 +147,12 @@ jobs:
       WIF_PROVIDER: ${{ (needs.setup.outputs.environment == 'prod') && secrets.WIF_PROVIDER_PROD || secrets.WIF_PROVIDER_DEV }}
       WIF_SERVICE_ACCOUNT: ${{ (needs.setup.outputs.environment == 'prod') && secrets.WIF_SERVICE_ACCOUNT_PROD || secrets.WIF_SERVICE_ACCOUNT_DEV }}
       TF_VARS_JSON: ${{ (needs.setup.outputs.environment == 'prod') && secrets.TF_VAR_PROD || secrets.TF_VAR_DEV }}
+      ARTIFACT_REGISTRY_REPO_NAME: ${{ secrets.ARTIFACT_REGISTRY_REPO_NAME }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
       
     defaults:
       run:
-        working-directory: ./image-processing-service/infrastructure
+        working-directory: ./infrastructure
     
     steps:
       - name: Checkout repository
@@ -154,6 +160,13 @@ jobs:
 
       - name: Create terraform.tfvars from JSON
         run: |
+          echo "📝 Creating terraform.tfvars for ${{ needs.setup.outputs.environment }}..."
+          
+          if [ -z "${{ env.TF_VARS_JSON }}" ]; then
+            echo "❌ ERROR: TF_VARS_JSON is empty!"
+            exit 1
+          fi
+          
           cat << 'EOF' > parse_json.py
           import json
           import sys
@@ -177,10 +190,21 @@ jobs:
                           print(f'  {k} = "{v}"')
                       print('}')
           except json.JSONDecodeError as e:
+              print(f"ERROR: Invalid JSON format: {e}", file=sys.stderr)
               sys.exit(1)
           EOF
           
           echo '${{ env.TF_VARS_JSON }}' | python3 parse_json.py > terraform.tfvars
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to parse JSON"
+            exit 1
+          fi
+          
+          echo "✅ terraform.tfvars created"
+          echo ""
+          echo "📋 Configuration:"
+          cat terraform.tfvars
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -191,6 +215,16 @@ jobs:
       - name: Setup Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Verify GCP Authentication
+        run: |
+          echo "🔐 Authenticated as:"
+          gcloud auth list
+          echo ""
+          echo "📦 Current project:"
+          gcloud config get-value project
+          echo ""
+          echo "🌍 Environment: ${{ needs.setup.outputs.environment }}"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -198,17 +232,26 @@ jobs:
 
       - name: Terraform Init
         run: |
+          echo "🔧 Initializing Terraform for ${{ needs.setup.outputs.environment }}..."
           terraform init
 
       - name: Terraform Plan
         run: |
+          echo "📊 Running Terraform plan..."
+          
+          # Reconstruct image tag from known values (not masked by GitHub)
+          IMAGE_TAG="${{ env.GCP_REGION }}-docker.pkg.dev/${{ needs.build-and-push.outputs.project_id }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.REPO_NAME }}:${{ github.sha }}"
+          
+          echo "Image tag for plan: ${IMAGE_TAG}"
+
           terraform plan \
-          -var="image_tag=${{ github.sha }}" \
-          -var="environment=${{ needs.setup.outputs.environment }}" \
-          -out=tfplan
+            -var="image_tag=${IMAGE_TAG}" \
+            -var="environment=${{ needs.setup.outputs.environment }}" \
+            -out=tfplan
 
       - name: Terraform Apply
         run: |
+          echo "🚀 Applying Terraform changes for ${{ needs.setup.outputs.environment }}..."
           terraform apply -auto-approve tfplan
 
       - name: Terraform Output
@@ -220,17 +263,45 @@ jobs:
           
           SERVICE_URL=$(terraform output -raw service_url)
           echo "service_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
+          echo ""
+          echo "✅ Service URL: ${SERVICE_URL}"
 
       - name: Upload Terraform Outputs
         uses: actions/upload-artifact@v4
         with:
           name: terraform-outputs-${{ needs.setup.outputs.environment }}
-          path: image-processing-service/infrastructure/terraform-outputs.json
+          path: infrastructure/terraform-outputs.json
           retention-days: 30
 
       - name: Cleanup Sensitive Files
         if: always()
         run: rm -f terraform.tfvars tfplan
 
+      - name: Deployment Summary
+        run: |
+          echo "🎉 Deployment completed successfully!"
+          echo "🌍 Environment: ${{ needs.setup.outputs.environment }}"
+          echo "🐳 Image: ${{ needs.build-and-push.outputs.image }}"
+          echo "🔗 Service URL: ${{ steps.tf-output.outputs.service_url }}"
+
     outputs:
       service_url: ${{ steps.tf-output.outputs.service_url }}
+
+  notify:
+    name: Notify Deployment
+    runs-on: ubuntu-latest
+    needs: [setup, build-and-push, terraform-deploy]
+    if: always()
+    
+    steps:
+      - name: Deployment Status
+        run: |
+          if [ "${{ needs.terraform-deploy.result }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+            echo "🌍 Environment: ${{ needs.setup.outputs.environment }}"
+            echo "🔗 Service URL: ${{ needs.terraform-deploy.outputs.service_url }}"
+          else
+            echo "❌ Deployment failed!"
+            echo "🌍 Environment: ${{ needs.setup.outputs.environment }}"
+            exit 1
+          fi
