@@ -18,6 +18,8 @@ const (
 
 type GCPConfig struct {
 	ProjectID        string
+	ProjectNumber    string
+	Region           string
 	InputBucketName  string
 	OutputBucketName string
 }
@@ -68,7 +70,6 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	env := Environment(getEnv("APP_ENV", "LOCAL"))
 
-	// DZI Config
 	tileSize, _ := strconv.Atoi(getEnv("TILE_SIZE", "256"))
 	overlap, _ := strconv.Atoi(getEnv("OVERLAP", "0"))
 	quality, _ := strconv.Atoi(getEnv("QUALITY", "85"))
@@ -82,7 +83,6 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 		Suffix:   suffix,
 	}
 
-	// Thumbnail Config
 	thumbSize, _ := strconv.Atoi(getEnv("THUMBNAIL_SIZE", "256"))
 	thumbQuality, _ := strconv.Atoi(getEnv("THUMBNAIL_QUALITY", "90"))
 
@@ -92,26 +92,24 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 		Quality: thumbQuality,
 	}
 
-	// GCP Config
 	gcpConfig := GCPConfig{
 		ProjectID:        getEnv("PROJECT_ID", ""),
+		ProjectNumber:    getEnv("PROJECT_NUMBER", ""),
+		Region:           getEnv("REGION", ""),
 		InputBucketName:  getEnv("ORIGINAL_BUCKET_NAME", ""),
 		OutputBucketName: getEnv("PROCESSED_BUCKET_NAME", ""),
 	}
 
-	// Mount Path
 	mountPath := MountPath{
 		InputMountPath:  getEnv("INPUT_MOUNT_PATH", "/mnt/input"),
 		OutputMountPath: getEnv("OUTPUT_MOUNT_PATH", "/mnt/output"),
 	}
 
-	// Pub/Sub Config
 	pubsubConfig := PubSubConfig{
 		ImageProcessingSubID:      getEnv("IMAGE_PROCESSING_SUB_ID", ""),
 		ImageProcessResultTopicID: getEnv("IMAGE_PROCESS_RESULT_TOPIC_ID", ""),
 	}
 
-	// Logging Config
 	loggingConfig := LoggingConfig{
 		Level:  getEnv("LOG_LEVEL", "INFO"),
 		Format: getEnv("LOG_FORMAT", "TEXT"),
