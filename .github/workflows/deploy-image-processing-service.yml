@@ -237,18 +237,12 @@ jobs:
 
       - name: Terraform Plan
         run: |
-          echo "📊 Running Terraform plan..."
-          
-          # Reconstruct image tag from known values (not masked by GitHub)
-          IMAGE_TAG="${{ env.GCP_REGION }}-docker.pkg.dev/${{ needs.build-and-push.outputs.project_id }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.REPO_NAME }}:${{ github.sha }}"
-          
-          echo "Image tag for plan: ${IMAGE_TAG}"
-
-          terraform plan \
-            -var="image_tag=${IMAGE_TAG}" \
+            echo "📊 Running Terraform plan..."
+    
+            terraform plan \
+            -var="image_tag=${{ github.sha }}" \
             -var="environment=${{ needs.setup.outputs.environment }}" \
             -out=tfplan
-
       - name: Terraform Apply
         run: |
           echo "🚀 Applying Terraform changes for ${{ needs.setup.outputs.environment }}..."
