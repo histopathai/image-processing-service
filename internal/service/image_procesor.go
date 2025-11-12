@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -45,6 +46,11 @@ func (ip *ImageProcessor) GetImageInfo(ctx context.Context, file *model.File) er
 	}
 	file.Format = &standardFormat
 
+	// For DNG files, we need to get dimensions from the raw file
+	if standardFormat == "dng" {
+		return ip.getDNGInfo(ctx, file)
+	}
+
 	widthStr, err := ip.runVipsHeaderField(ctx, file.Path, "width")
 	if err != nil {
 		ip.logger.Error("Failed to get image width", "file_path", file.Path, "error", err)
@@ -73,6 +79,136 @@ func (ip *ImageProcessor) GetImageInfo(ctx context.Context, file *model.File) er
 		"height", *file.Height,
 		"size", *file.Size,
 		"format", *file.Format,
+	)
+
+	return nil
+}
+
+func (ip *ImageProcessor) getDNGInfo(ctx context.Context, file *model.File) error {
+	ip.logger.Debug("Getting DNG file info using dcraw", "file_path", file.Path)
+
+	// Use dcraw -i -v to get image info
+	cmd := exec.CommandContext(ctx, "dcraw", "-i", "-v", file.Path)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		ip.logger.Error("Failed to get DNG info", "error", err, "output", string(output))
+		return errors.NewProcessingError("failed to read DNG metadata")
+	}
+
+	// Parse dcraw output to extract dimensions
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Image size:") {
+			// Expected format: "Image size:  4032 x 3024"
+			parts := strings.Fields(line)
+			if len(parts) >= 5 {
+				width, err := strconv.Atoi(parts[2])
+				if err == nil {
+					file.Width = &width
+				}
+				height, err := strconv.Atoi(parts[4])
+				if err == nil {
+					file.Height = &height
+				}
+			}
+		} else if strings.Contains(line, "Full size:") {
+			// Alternative: "Full size:  4032 x 3024"
+			parts := strings.Fields(line)
+			if len(parts) >= 5 && file.Width == nil {
+				width, err := strconv.Atoi(parts[2])
+				if err == nil {
+					file.Width = &width
+				}
+				height, err := strconv.Atoi(parts[4])
+				if err == nil {
+					file.Height = &height
+				}
+			}
+		}
+	}
+
+	if file.Width == nil || file.Height == nil {
+		ip.logger.Error("Could not extract dimensions from DNG file")
+		return errors.NewProcessingError("failed to extract DNG dimensions")
+	}
+
+	ip.logger.Info("Successfully retrieved DNG info",
+		"file_path", file.Path,
+		"width", *file.Width,
+		"height", *file.Height,
+	)
+
+	return nil
+}
+
+func (ip *ImageProcessor) ConvertDNGToTIFF(ctx context.Context, dngPath string, outputTiffPath string) error {
+	ip.logger.Info("Converting DNG to TIFF",
+		"input", dngPath,
+		"output", outputTiffPath,
+	)
+
+	// dcraw options for high-quality lossless conversion:
+	// -T: Write TIFF instead of PPM
+	// -4: Linear 16-bit (more depth)
+	// -q 3: Use high-quality interpolation (AHD)
+	// -w: Use camera white balance
+	// -H 0: No highlight recovery (preserve all data)
+	// -o 1: Output in sRGB color space
+	// -c: Write to stdout (we'll redirect to file)
+	args := []string{
+		"-T",      // Output TIFF
+		"-4",      // 16-bit linear
+		"-q", "3", // AHD interpolation (high quality)
+		"-w",      // Camera white balance
+		"-H", "0", // No highlight clipping
+		"-o", "1", // sRGB color space
+		"-c", // Write to stdout
+		dngPath,
+	}
+
+	cmd := exec.CommandContext(ctx, "dcraw", args...)
+
+	// Create output file
+	outFile, err := os.Create(outputTiffPath)
+	if err != nil {
+		return errors.NewProcessingError("failed to create output TIFF file").
+			WithContext("path", outputTiffPath)
+	}
+	defer outFile.Close()
+
+	cmd.Stdout = outFile
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return errors.NewProcessingError("failed to create stderr pipe")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return errors.NewProcessingError("failed to start dcraw conversion").
+			WithContext("error", err.Error())
+	}
+
+	// Read stderr for error messages
+	stderrOutput, _ := io.ReadAll(stderr)
+
+	if err := cmd.Wait(); err != nil {
+		ip.logger.Error("dcraw conversion failed",
+			"error", err,
+			"stderr", string(stderrOutput),
+		)
+		return errors.NewProcessingError("dcraw conversion failed").
+			WithContext("error", err.Error()).
+			WithContext("stderr", string(stderrOutput))
+	}
+
+	// Verify the output file was created
+	if info, err := os.Stat(outputTiffPath); err != nil || info.Size() == 0 {
+		return errors.NewProcessingError("dcraw produced empty or invalid output")
+	}
+
+	ip.logger.Info("Successfully converted DNG to TIFF",
+		"input", dngPath,
+		"output", outputTiffPath,
 	)
 
 	return nil
@@ -145,17 +281,43 @@ func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File) er
 	}
 
 	outputPathBase := *file.ProcessedPath
+	inputPath := file.Path
+
+	// Check if this is a DNG file
+	if file.Format != nil && strings.ToLower(*file.Format) == "dng" {
+		ip.logger.Info("Detected DNG file, converting to TIFF first",
+			"file_path", file.Path,
+			"file_id", file.ID,
+		)
+
+		// Create temporary TIFF file path
+		tempTiffPath := filepath.Join(filepath.Dir(outputPathBase), file.ID+"_converted.tiff")
+
+		// Convert DNG to TIFF
+		if err := ip.ConvertDNGToTIFF(ctx, file.Path, tempTiffPath); err != nil {
+			ip.logger.Error("Failed to convert DNG to TIFF", "error", err)
+			return err
+		}
+
+		// Update input path to use the converted TIFF
+		inputPath = tempTiffPath
+		defer os.Remove(tempTiffPath) // Clean up after processing
+
+		ip.logger.Info("DNG converted to TIFF, proceeding with DZI processing",
+			"tiff_path", tempTiffPath,
+		)
+	}
 
 	ip.logger.Info("Starting DZI processing",
-		"file_path", file.Path,
+		"file_path", inputPath,
 		"file_id", file.ID,
 		"output_base", outputPathBase,
 	)
 
-	err := ip.vipsDZIProcessor(ctx, file.Path, outputPathBase)
+	err := ip.vipsDZIProcessor(ctx, inputPath, outputPathBase)
 	if err != nil {
 		ip.logger.Error("FAILED DZI processing",
-			"file_path", file.Path,
+			"file_path", inputPath,
 			"file_id", file.ID,
 			"error", err,
 		)
@@ -163,7 +325,7 @@ func (ip *ImageProcessor) DZIProcessor(ctx context.Context, file *model.File) er
 	}
 
 	ip.logger.Info("Successfully processed DZI",
-		"file_path", file.Path,
+		"file_path", inputPath,
 		"output_base", outputPathBase,
 		"dzi_file", outputPathBase+".dzi",
 	)
