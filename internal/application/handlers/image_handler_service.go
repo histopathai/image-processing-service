@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	appEvents "github.com/histopathai/image-processing-service/internal/application/events"
 	"github.com/histopathai/image-processing-service/internal/domain/events"
@@ -135,6 +136,7 @@ func (h *ImageHandlerService) processImage(
 	h.logger.Info("Starting DZI processing (local)",
 		"image_id", file.ID,
 		"output_path_base", localOutputPathBase,
+		"format", *file.Format,
 	)
 
 	if err := h.processor.DZIProcessor(ctx, file); err != nil {
@@ -142,15 +144,34 @@ func (h *ImageHandlerService) processImage(
 		return pkgErrors.WrapProcessingError(err, "failed to process DZI")
 	}
 
+	// For thumbnail, use converted TIFF if it's a DNG file
+	thumbnailInputPath := inputPath
+	var tempTiffForThumbnail string
+
+	if file.Format != nil && strings.ToLower(*file.Format) == "dng" {
+		h.logger.Info("Creating intermediate TIFF for thumbnail from DNG",
+			"image_id", file.ID,
+		)
+		tempTiffForThumbnail = filepath.Join(localTempDir, "thumbnail_source.tiff")
+
+		if err := h.processor.ConvertDNGToTIFF(ctx, inputPath, tempTiffForThumbnail); err != nil {
+			h.logger.Warn("Failed to convert DNG for thumbnail (continuing with original)", "error", err)
+		} else {
+			thumbnailInputPath = tempTiffForThumbnail
+			defer os.Remove(tempTiffForThumbnail)
+		}
+	}
+
 	localThumbnailPath := filepath.Join(localTempDir, "thumbnail.jpg")
 	h.logger.Info("Creating thumbnail (local)",
 		"image_id", file.ID,
 		"thumbnail_path", localThumbnailPath,
+		"source", thumbnailInputPath,
 	)
 
 	if err := h.processor.ExtractThumbnail(
 		ctx,
-		inputPath,
+		thumbnailInputPath,
 		localThumbnailPath,
 		h.cfg.ThumbnailConfig.Width,
 		h.cfg.ThumbnailConfig.Height,
@@ -183,7 +204,7 @@ func (h *ImageHandlerService) processImage(
 	if _, err := os.Stat(localThumbnailPath); !os.IsNotExist(err) {
 		gcsThumbnailPath := filepath.Join(finalGCSOutputDir, "thumbnail.jpg")
 		if err := copyFile(localThumbnailPath, gcsThumbnailPath); err != nil {
-			h.logger.Warn("Failed to copy thumbnail to GS", "error", err, "src", localThumbnailPath, "dst", gcsThumbnailPath)
+			h.logger.Warn("Failed to copy thumbnail to GCS", "error", err, "src", localThumbnailPath, "dst", gcsThumbnailPath)
 		}
 	}
 
