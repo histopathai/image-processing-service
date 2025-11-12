@@ -8,3 +8,4 @@ memory_limit  = "8Gi"
 
 allow_public_access = false
 log_level           = "DEBUG"
+max_concurrency     = 1

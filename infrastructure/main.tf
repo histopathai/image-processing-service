@@ -50,6 +50,8 @@ resource "google_cloud_run_v2_service" "image_processing_service" {
   ingress  = var.allow_public_access ? "INGRESS_TRAFFIC_ALL" : "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
+    max_instance_request_concurrency = var.max_concurrency
+
     service_account = local.service_account
     timeout         = "3600s"
     scaling {
@@ -73,6 +75,7 @@ resource "google_cloud_run_v2_service" "image_processing_service" {
     }
 
     containers {
+    
       image = local.image_name
       resources {
         limits = {

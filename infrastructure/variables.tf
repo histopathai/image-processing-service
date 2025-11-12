@@ -7,7 +7,11 @@ variable "environment" {
     error_message = "Environment must be either 'prod' or 'dev'."
   }
 }
-
+variable "max_concurrency" {
+  description = "Maximum number of concurrent requests per instance"
+  type        = number
+  default     = 1
+}
 variable "min_instances" {
   description = "Minimum number of instances for scaling"
   type        = number
