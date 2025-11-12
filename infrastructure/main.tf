@@ -30,7 +30,7 @@ locals {
 
   artifact_repository_id = data.terraform_remote_state.platform.outputs.artifact_repository_id
   service_name = var.environment == "prod" ? "image-processing-service" : "image-processing-service-${var.environment}"
-  image_name   = "${local.region}-docker.pkg.dev/${local.project_id}/${local.artifact_repository_id}/${local.service_name}:${var.image_tag}"
+  image_name = "${local.region}-docker.pkg.dev/${local.project_id}/${local.artifact_repository_id}/image-processing-service:${var.image_tag}"
 
   original_bucket_name  = data.terraform_remote_state.platform.outputs.original_bucket_name
   processed_bucket_name = data.terraform_remote_state.platform.outputs.processed_bucket_name
