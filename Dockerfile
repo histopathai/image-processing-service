@@ -16,7 +16,7 @@ COPY . .
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o image-processing-service ./cmd/main.go
 
-# Runtime stage with libvips
+# Runtime stage with libvips and dcraw for DNG support
 FROM debian:bullseye-slim
 
 RUN apt-get update && apt-get install -y \
@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     libvips-tools \
     openslide-tools \
     libimage-exiftool-perl \
+    dcraw \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder
