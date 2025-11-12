@@ -17,6 +17,7 @@ var SupportedFormats = Format{
 	"bif":  true,
 	"vms":  true,
 	"vmu":  true,
+	"dng":  true,
 }
 
 func (f Format) IsSupported(format string) bool {
