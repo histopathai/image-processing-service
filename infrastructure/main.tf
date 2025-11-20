@@ -8,7 +8,6 @@ terraform {
     }
   }
   backend "gcs" {
-    bucket = "tf-state-histopathai-platform"
     prefix = "services/image-processing-service"
   }
 }
@@ -17,20 +16,23 @@ data "terraform_remote_state" "platform" {
   backend = "gcs"
 
   config = {
-    bucket = "tf-state-histopathai-platform"
+    bucket = var.tf_state_bucket
     prefix = "platform/prod"
   }
 }
 
 locals {
+  #GCP project and region info
   project_id      = data.terraform_remote_state.platform.outputs.project_id
   project_number  = data.terraform_remote_state.platform.outputs.project_number
   region          = data.terraform_remote_state.platform.outputs.region
-  service_account = data.terraform_remote_state.platform.outputs.image_processing_service_account_email
 
+  #Service info
+  service_account = data.terraform_remote_state.platform.outputs.image_processing_service_account_email
   artifact_repository_id = data.terraform_remote_state.platform.outputs.artifact_repository_id
   service_name = var.environment == "prod" ? "image-processing-service" : "image-processing-service-${var.environment}"
   image_name = "${local.region}-docker.pkg.dev/${local.project_id}/${local.artifact_repository_id}/image-processing-service:${var.image_tag}"
+
 
   original_bucket_name  = data.terraform_remote_state.platform.outputs.original_bucket_name
   processed_bucket_name = data.terraform_remote_state.platform.outputs.processed_bucket_name
