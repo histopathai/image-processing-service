@@ -99,3 +99,15 @@ variable "thumbnail_quality" {
   type        = number
   default     = 90
 }
+
+variable "image_tag" {
+  description = "Docker image tag to deploy"
+  type        = string
+  default     = "latest"
+}
+
+
+variable "tf_state_bucket" {
+  description = "GCS bucket name for terraform state"
+  type        = string
+}
