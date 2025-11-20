@@ -241,14 +241,12 @@ jobs:
         run: |
             echo "📊 Running Terraform plan..."
     
-            IMAGE_TAG="${{ env.GCP_REGION }}-docker.pkg.dev/${{ needs.build-and-push.outputs.project_id }}/${{ env.ARTIFACT_REGISTRY_REPO_NAME }}/${{ env.REPO_NAME }}:${{ github.sha }}"
-
             terraform plan \
-            -var="image_tag=${IMAGE_TAG}" \
+            -var="image_tag=${{ github.sha }}" \
             -var="environment=${{ needs.setup.outputs.environment }}" \
             -var="tf_state_bucket=${{ env.TF_STATE_BUCKET }}" \
             -out=tfplan
-            
+
       - name: Terraform Apply
         run: |
           echo "🚀 Applying Terraform changes for ${{ needs.setup.outputs.environment }}..."
