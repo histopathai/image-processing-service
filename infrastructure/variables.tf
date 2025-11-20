@@ -53,11 +53,6 @@ variable "log_level" {
   }
 }
 
-variable "image_tag" {
-  description = "Docker image tag to deploy"
-  type        = string
-}
-
 variable "tile_size" {
   description = "DZI tile size"
   type        = number
