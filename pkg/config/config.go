@@ -16,6 +16,14 @@ const (
 	EnvProduction Environment = "PROD"
 )
 
+type WorkerType string
+
+const (
+	WorkerTypeSmall  WorkerType = "small"
+	WorkerTypeMedium WorkerType = "medium"
+	WorkerTypeLarge  WorkerType = "large"
+)
+
 type GCPConfig struct {
 	ProjectID        string
 	Region           string
@@ -44,6 +52,7 @@ type DZIConfig struct {
 	Layout   string
 	Suffix   string
 }
+
 type ImageProcessTimeoutMinute struct {
 	FormatConversion int
 	DZIConversion    int
@@ -59,6 +68,7 @@ type ThumbnailConfig struct {
 
 type Config struct {
 	Env                       Environment
+	WorkerType                WorkerType
 	GCP                       GCPConfig
 	MountPath                 MountPath
 	PubSubConfig              PubSubConfig
@@ -74,6 +84,7 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 	}
 
 	env := Environment(getEnv("APP_ENV", "LOCAL"))
+	workerType := WorkerType(getEnv("WORKER_TYPE", "medium"))
 
 	tileSize, _ := strconv.Atoi(getEnv("TILE_SIZE", "256"))
 	overlap, _ := strconv.Atoi(getEnv("OVERLAP", "0"))
@@ -115,7 +126,7 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	loggingConfig := LoggingConfig{
 		Level:  getEnv("LOG_LEVEL", "INFO"),
-		Format: getEnv("LOG_FORMAT", "TEXT"),
+		Format: getEnv("LOG_FORMAT", "json"),
 	}
 
 	timeoutFormatConversion, _ := strconv.Atoi(getEnv("FORMAT_CONVERSION_TIMEOUT_MINUTE", "20"))
@@ -132,6 +143,7 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	config := &Config{
 		Env:                       env,
+		WorkerType:                workerType,
 		GCP:                       gcpConfig,
 		MountPath:                 mountPath,
 		PubSubConfig:              pubsubConfig,
@@ -141,7 +153,9 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 		ImageProcessTimeoutMinute: imageProcessTimeout,
 	}
 
-	logger.Info("Configuration loaded", "env", config.Env)
+	logger.Info("Configuration loaded",
+		"env", config.Env,
+		"worker_type", config.WorkerType)
 	return config, nil
 }
 
