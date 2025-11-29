@@ -2,8 +2,7 @@ package events
 
 import (
 	"encoding/json"
-
-	"github.com/histopathai/image-processing-service/pkg/errors"
+	"fmt"
 )
 
 type EventSerializer interface {
@@ -20,14 +19,14 @@ func NewJSONEventSerializer() *JSONEventSerializer {
 func (s *JSONEventSerializer) Serialize(event interface{}) ([]byte, error) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		return nil, errors.NewInternalError("failed to serialize event").WithContext("error", err.Error())
+		return nil, fmt.Errorf("failed to serialize event: %w", err)
 	}
 	return data, nil
 }
 
 func (s *JSONEventSerializer) Deserialize(data []byte, event interface{}) error {
 	if err := json.Unmarshal(data, event); err != nil {
-		return errors.NewInternalError("failed to deserialize event").WithContext("error", err.Error())
+		return fmt.Errorf("failed to deserialize event: %w", err)
 	}
 	return nil
 }
