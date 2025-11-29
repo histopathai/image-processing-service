@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/histopathai/image-processing-service/internal/domain/events"
+	"github.com/histopathai/image-processing-service/internal/domain/port"
 	"github.com/histopathai/image-processing-service/pkg/errors"
 )
 
@@ -44,4 +44,4 @@ func (p *Publisher) Publish(ctx context.Context, topicID string, data []byte, at
 }
 
 // Ensure Publisher implements the EventPublisher interface
-var _ events.Publisher = (*Publisher)(nil)
+var _ port.Publisher = (*Publisher)(nil)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/histopathai/image-processing-service/internal/domain/events"
+	"github.com/histopathai/image-processing-service/internal/domain/port"
 )
 
 type Publisher struct {
@@ -29,4 +29,4 @@ func (p *Publisher) Publish(ctx context.Context, topicID string, data []byte, at
 	return nil
 }
 
-var _ events.Publisher = (*Publisher)(nil)
+var _ port.Publisher = (*Publisher)(nil)
