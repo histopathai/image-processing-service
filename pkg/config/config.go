@@ -18,7 +18,6 @@ const (
 
 type GCPConfig struct {
 	ProjectID        string
-	ProjectNumber    string
 	Region           string
 	InputBucketName  string
 	OutputBucketName string
@@ -30,7 +29,6 @@ type MountPath struct {
 }
 
 type PubSubConfig struct {
-	ImageProcessingSubID      string
 	ImageProcessResultTopicID string
 }
 
@@ -46,6 +44,12 @@ type DZIConfig struct {
 	Layout   string
 	Suffix   string
 }
+type ImageProcessTimeoutMinute struct {
+	FormatConversion int
+	DZIConversion    int
+	Thumbnail        int
+	General          int
+}
 
 type ThumbnailConfig struct {
 	Width   int
@@ -54,13 +58,14 @@ type ThumbnailConfig struct {
 }
 
 type Config struct {
-	Env             Environment
-	GCP             GCPConfig
-	MountPath       MountPath
-	PubSubConfig    PubSubConfig
-	Logging         LoggingConfig
-	DZIConfig       DZIConfig
-	ThumbnailConfig ThumbnailConfig
+	Env                       Environment
+	GCP                       GCPConfig
+	MountPath                 MountPath
+	PubSubConfig              PubSubConfig
+	Logging                   LoggingConfig
+	DZIConfig                 DZIConfig
+	ThumbnailConfig           ThumbnailConfig
+	ImageProcessTimeoutMinute ImageProcessTimeoutMinute
 }
 
 func LoadConfig(logger *slog.Logger) (*Config, error) {
@@ -94,7 +99,6 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	gcpConfig := GCPConfig{
 		ProjectID:        getEnv("PROJECT_ID", ""),
-		ProjectNumber:    getEnv("PROJECT_NUMBER", ""),
 		Region:           getEnv("REGION", ""),
 		InputBucketName:  getEnv("ORIGINAL_BUCKET_NAME", ""),
 		OutputBucketName: getEnv("PROCESSED_BUCKET_NAME", ""),
@@ -106,7 +110,6 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 	}
 
 	pubsubConfig := PubSubConfig{
-		ImageProcessingSubID:      getEnv("IMAGE_PROCESSING_SUB_ID", ""),
 		ImageProcessResultTopicID: getEnv("IMAGE_PROCESS_RESULT_TOPIC_ID", ""),
 	}
 
@@ -115,14 +118,27 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 		Format: getEnv("LOG_FORMAT", "TEXT"),
 	}
 
+	timeoutFormatConversion, _ := strconv.Atoi(getEnv("FORMAT_CONVERSION_TIMEOUT_MINUTE", "20"))
+	timeoutDZIConversion, _ := strconv.Atoi(getEnv("DZI_CONVERSION_TIMEOUT_MINUTE", "120"))
+	timeoutThumbnail, _ := strconv.Atoi(getEnv("THUMBNAIL_TIMEOUT_MINUTE", "10"))
+	timeoutGeneral, _ := strconv.Atoi(getEnv("GENERAL_IMAGE_PROCESS_TIMEOUT_MINUTE", "10"))
+
+	imageProcessTimeout := ImageProcessTimeoutMinute{
+		FormatConversion: timeoutFormatConversion,
+		DZIConversion:    timeoutDZIConversion,
+		Thumbnail:        timeoutThumbnail,
+		General:          timeoutGeneral,
+	}
+
 	config := &Config{
-		Env:             env,
-		GCP:             gcpConfig,
-		MountPath:       mountPath,
-		PubSubConfig:    pubsubConfig,
-		Logging:         loggingConfig,
-		DZIConfig:       dziConfig,
-		ThumbnailConfig: thumbnailConfig,
+		Env:                       env,
+		GCP:                       gcpConfig,
+		MountPath:                 mountPath,
+		PubSubConfig:              pubsubConfig,
+		Logging:                   loggingConfig,
+		DZIConfig:                 dziConfig,
+		ThumbnailConfig:           thumbnailConfig,
+		ImageProcessTimeoutMinute: imageProcessTimeout,
 	}
 
 	logger.Info("Configuration loaded", "env", config.Env)
