@@ -75,15 +75,12 @@ jobs:
         id: gcp-info
         run: |
           PROJECT_ID=$(gcloud config get-value project)
-          PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
           REGION="${{ secrets.GCP_REGION }}"
           
           echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
-          echo "project_number=${PROJECT_NUMBER}" >> $GITHUB_OUTPUT
           echo "region=${REGION}" >> $GITHUB_OUTPUT
           
           echo "📦 Project ID: ${PROJECT_ID}"
-          echo "🔢 Project Number: ${PROJECT_NUMBER}"
           echo "🌍 Region: ${REGION}"
 
       - name: Configure Docker for Artifact Registry
@@ -134,7 +131,6 @@ jobs:
     outputs:
       image: ${{ steps.image-info.outputs.image }}
       project_id: ${{ steps.gcp-info.outputs.project_id }}
-      project_number: ${{ steps.gcp-info.outputs.project_number }}
       region: ${{ steps.gcp-info.outputs.region }}
 
   terraform-deploy:
