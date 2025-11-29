@@ -5,8 +5,6 @@ import (
 	"log/slog"
 
 	"cloud.google.com/go/pubsub"
-	appEvents "github.com/histopathai/image-processing-service/internal/application/events"
-	"github.com/histopathai/image-processing-service/internal/application/handlers"
 	"github.com/histopathai/image-processing-service/internal/domain/events"
 	pubsubInfra "github.com/histopathai/image-processing-service/internal/infrastructure/events/pubsub"
 	"github.com/histopathai/image-processing-service/internal/service"
@@ -15,15 +13,12 @@ import (
 )
 
 type Container struct {
-	Config              *config.Config
-	Logger              *slog.Logger
-	PubSubClient        *pubsub.Client
-	Publisher           events.Publisher
-	Subscriber          events.Subscriber
-	EventSerializer     events.EventSerializer
-	ImageProcessor      *service.ImageProcessor
-	ImageEventService   *appEvents.ImageEventService
-	ImageHandlerService *handlers.ImageHandlerService
+	Config                 *config.Config
+	Logger                 *slog.Logger
+	PubSubClient           *pubsub.Client
+	Publisher              events.Publisher
+	EventSerializer        events.EventSerializer
+	ImageProcessingService *service.ImageProcessingService
 }
 
 func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*Container, error) {
@@ -42,45 +37,18 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*Contain
 	// Publisher
 	publisher := pubsubInfra.NewPublisher(pubsubClient, logger)
 
-	// Subscriber
-	subscriber := pubsubInfra.NewSubscriber(
-		pubsubClient,
-		cfg.PubSubConfig.ImageProcessingSubID,
-		logger,
-	)
-
 	// Image processor service
-	imageProcessor := service.NewImageProcessor(logger, cfg.DZIConfig)
-
-	// Image event service
-	imageEventService := appEvents.NewImageEventService(
-		publisher,
-		eventSerializer,
-		logger,
-		&cfg.PubSubConfig,
-	)
-
-	// Image handler service
-	imageHandlerService := handlers.NewImageHandlerService(
-		imageProcessor,
-		imageEventService,
-		eventSerializer,
-		cfg,
-		logger,
-	)
+	imageProcessor := service.NewImageProcessingService(logger, cfg)
 
 	logger.Info("Container initialized successfully")
 
 	return &Container{
-		Config:              cfg,
-		Logger:              logger,
-		PubSubClient:        pubsubClient,
-		Publisher:           publisher,
-		Subscriber:          subscriber,
-		EventSerializer:     eventSerializer,
-		ImageProcessor:      imageProcessor,
-		ImageEventService:   imageEventService,
-		ImageHandlerService: imageHandlerService,
+		Config:                 cfg,
+		Logger:                 logger,
+		PubSubClient:           pubsubClient,
+		Publisher:              publisher,
+		EventSerializer:        eventSerializer,
+		ImageProcessingService: imageProcessor,
 	}, nil
 }
 
