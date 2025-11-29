@@ -20,8 +20,9 @@ const (
 	ErrorTypeExternal  ErrorType = "external_service_error"
 
 	// Processing errors
-	ErrorTypeProcessing ErrorType = "processing_error"
-	ErrorTypeTimeout    ErrorType = "timeout_error"
+	ErrorTypeProcessing   ErrorType = "processing_error"
+	ErrorTypeTimeout      ErrorType = "timeout_error"
+	ErrorTypeCancellation ErrorType = "cancellation_error"
 
 	// System errors
 	ErrorTypeInternal      ErrorType = "internal_error"
