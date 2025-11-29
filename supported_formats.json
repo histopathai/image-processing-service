@@ -1,0 +1,15 @@
+{
+    "jpeg": true,
+	"png":  true,
+	"tiff": true,
+	"svs":  true,
+	"jpg":  true,
+	"tif":  true,
+	"bmp":  true,
+	"ndpi": true,
+	"scn":  true,
+	"bif":  true,
+	"vms":  true,
+	"vmu":  true,
+	"dng":  true
+}
