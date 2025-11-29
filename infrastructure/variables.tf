@@ -7,40 +7,6 @@ variable "environment" {
     error_message = "Environment must be either 'prod' or 'dev'."
   }
 }
-variable "max_concurrency" {
-  description = "Maximum number of concurrent requests per instance"
-  type        = number
-  default     = 1
-}
-variable "min_instances" {
-  description = "Minimum number of instances for scaling"
-  type        = number
-  default     = 0
-}
-
-variable "max_instances" {
-  description = "Maximum number of instances for scaling"
-  type        = number
-  default     = 10
-}
-
-variable "cpu_limit" {
-  description = "CPU limit for each instance"
-  type        = string
-  default     = "2"
-}
-
-variable "memory_limit" {
-  description = "Memory limit for each instance"
-  type        = string
-  default     = "8Gi"
-}
-
-variable "allow_public_access" {
-  description = "Allow public access to the service"
-  type        = bool
-  default     = false
-}
 
 variable "log_level" {
   description = "Log level (DEBUG, INFO, WARN, ERROR)"
@@ -95,12 +61,23 @@ variable "thumbnail_quality" {
   default     = 90
 }
 
+variable "format_conversion_timeout_minute" {
+  description = "Timeout for format conversion in minutes"
+  type        = number
+  default     = 20
+}
+
+variable "dzi_conversion_timeout_minute" {
+  description = "Timeout for DZI conversion in minutes"
+  type        = number
+  default     = 120
+}
+
 variable "image_tag" {
   description = "Docker image tag to deploy"
   type        = string
   default     = "latest"
 }
-
 
 variable "tf_state_bucket" {
   description = "GCS bucket name for terraform state"
