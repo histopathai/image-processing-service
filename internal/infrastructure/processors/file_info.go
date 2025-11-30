@@ -42,21 +42,36 @@ func (p *ImageInfoProcessor) GetImageInfo(ctx context.Context, inputFilePath str
 
 	switch ext {
 	case ".dng":
-		p.logger.Info("Detected RAW format, using ExifTool for dimensions",
-			"file", inputFilePath,
-			"format", ext)
+		p.logger.Info("Detected RAW format, using ExifTool for dimensions", "file", inputFilePath)
 		return p.getDimensionsWithExifTool(ctx, inputFilePath, fileInfo.Size())
 
 	case ".ndpi", ".svs", ".scn", ".bif", ".vms", ".vmu":
-		p.logger.Info("Detected whole slide image format, using OpenSlide for dimensions",
-			"file", inputFilePath,
-			"format", ext)
-		return p.getDimensionsWithOpenSlide(ctx, inputFilePath, fileInfo.Size())
+		p.logger.Info("Detected WSI format, attempting extraction strategies", "file", inputFilePath)
+
+		// 1. Strateji: OpenSlide (Standart yöntem)
+		info, err := p.getDimensionsWithOpenSlide(ctx, inputFilePath, fileInfo.Size())
+		if err == nil {
+			return info, nil
+		}
+		p.logger.Warn("OpenSlide failed, trying ExifTool", "error", err)
+
+		// 2. Strateji: ExifTool (Metadata okuyucu)
+		info, err = p.getDimensionsWithExifTool(ctx, inputFilePath, fileInfo.Size())
+		if err == nil {
+			return info, nil
+		}
+		p.logger.Warn("ExifTool failed, trying VipsHeader", "error", err)
+
+		// 3. Strateji: VipsHeader (Alternatif kütüphane)
+		info, err = p.getDimensionsWithVips(ctx, inputFilePath, fileInfo.Size())
+		if err == nil {
+			return info, nil
+		}
+		p.logger.Error("All WSI dimension extraction methods failed", "file", inputFilePath)
+		return nil, errors.NewProcessingError("failed to extract WSI dimensions").
+			WithContext("file", inputFilePath)
 
 	default:
-		p.logger.Info("Using vipsheader for dimensions",
-			"file", inputFilePath,
-			"format", ext)
 		return p.getDimensionsWithVips(ctx, inputFilePath, fileInfo.Size())
 	}
 }
