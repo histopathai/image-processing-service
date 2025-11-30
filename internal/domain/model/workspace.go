@@ -22,7 +22,7 @@ func NewWorkspace(file *File) (*Workspace, error) {
 		return nil, fmt.Errorf("file cannot be nil")
 	}
 
-	tempDir, err := os.MkdirTemp("", fmt.Sprintf("workspace-%s-", file.ID))
+	tempDir, err := os.MkdirTemp("/tmp", fmt.Sprintf("workspace-%s", file.ID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workspace directory: %w", err)
 	}
