@@ -1,12 +1,15 @@
 package processors
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/errors"
@@ -272,23 +275,86 @@ func (p *VipsProcessor) GetImageInfo(ctx context.Context, inputFilePath string) 
 		return nil, err
 	}
 
-	widthResult, err := p.Execute(ctx, []string{"-f", "width", inputFilePath}, 1)
-	if err != nil {
-		return nil, err
+	ext := strings.ToLower(filepath.Ext(inputFilePath))
+
+	switch ext {
+	case ".dng":
+		p.logger.Info("Detected RAW format, using ExifTool for dimensions", "file", inputFilePath)
+		return p.getDimensionsWithExifTool(ctx, inputFilePath, fileInfo.Size())
+
+	default:
+		return p.getDimensionsWithVips(ctx, inputFilePath, fileInfo.Size())
+	}
+}
+
+func (p *VipsProcessor) getDimensionsWithExifTool(ctx context.Context, inputFilePath string, size int64) (*ImageInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	args := []string{"-ImageWidth", "-ImageHeight", "-s3", "-n", inputFilePath}
+	cmd := exec.CommandContext(ctx, "exiftool", args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		p.logger.Error("Exiftool failed", "stderr", stderr.String(), "error", err)
+		return nil, errors.WrapProcessingError(err, "failed to get dimensions with ExifTool")
 	}
 
-	heightResult, err := p.Execute(ctx, []string{"-f", "height", inputFilePath}, 1)
-	if err != nil {
-		return nil, err
+	output := strings.TrimSpace(stdout.String())
+	lines := strings.Split(output, "\n")
+
+	if len(lines) < 2 {
+		p.logger.Warn("Exiftool returned incomplete data, trying fallback parsing", "output", output)
+		return nil, errors.NewProcessingError("unexpected output from exiftool").WithContext("output", output)
 	}
 
 	var width, height int
-	fmt.Sscanf(strings.TrimSpace(widthResult.Stdout), "%d", &width)
-	fmt.Sscanf(strings.TrimSpace(heightResult.Stdout), "%d", &height)
+	fmt.Sscanf(strings.TrimSpace(lines[0]), "%d", &width)
+	fmt.Sscanf(strings.TrimSpace(lines[1]), "%d", &height)
+
+	if width == 0 || height == 0 {
+		return nil, errors.NewProcessingError("invalid dimensions detected").
+			WithContext("width", width).
+			WithContext("height", height)
+	}
 
 	return &ImageInfo{
 		Width:  width,
 		Height: height,
-		Size:   fileInfo.Size(),
+		Size:   size,
+	}, nil
+}
+
+func (p *VipsProcessor) getDimensionsWithVips(ctx context.Context, inputFilePath string, size int64) (*ImageInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	widthCmd := exec.CommandContext(ctx, "vipsheader", "-f", "width", inputFilePath)
+	var widthOut bytes.Buffer
+	widthCmd.Stdout = &widthOut
+	if err := widthCmd.Run(); err != nil {
+		p.logger.Error("vipsheader width lookup failed", "error", err)
+		return nil, err
+	}
+
+	heightCmd := exec.CommandContext(ctx, "vipsheader", "-f", "height", inputFilePath)
+	var heightOut bytes.Buffer
+	heightCmd.Stdout = &heightOut
+	if err := heightCmd.Run(); err != nil {
+		p.logger.Error("vipsheader height lookup failed", "error", err)
+		return nil, err
+	}
+
+	var width, height int
+	fmt.Sscanf(strings.TrimSpace(widthOut.String()), "%d", &width)
+	fmt.Sscanf(strings.TrimSpace(heightOut.String()), "%d", &height)
+
+	return &ImageInfo{
+		Width:  width,
+		Height: height,
+		Size:   size,
 	}, nil
 }
