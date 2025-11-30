@@ -24,6 +24,14 @@ data "terraform_remote_state" "platform" {
     prefix = "platform/prod"
   }
 }
+data "terraform_remote_state" "main-service" {
+  backend = "gcs"
+
+  config = {
+    bucket = var.tf_state_bucket
+    prefix = var.environment == "prod" ? "services/main-service" : "services/main-service-dev"
+  }
+}
 
 locals {
   # GCP project and region info
@@ -38,6 +46,8 @@ locals {
 
   original_bucket_name  = data.terraform_remote_state.platform.outputs.original_bucket_name
   processed_bucket_name = data.terraform_remote_state.platform.outputs.processed_bucket_name
+
+  processing_completed_topic = data.terraform_remote_state.main-service.outputs.processing_completed_topic
 
   input_mount_path  = "/gcs/${local.original_bucket_name}"
   output_mount_path = "/gcs/${local.processed_bucket_name}"
@@ -163,7 +173,7 @@ resource "google_cloud_run_v2_job" "image_processing_job" {
         }
         env {
           name  = "IMAGE_PROCESS_RESULT_TOPIC_ID"
-          value = data.terraform_remote_state.platform.outputs.processing_completed_topic
+          value = local.processing_completed_topic
         }
         env {
           name  = "INPUT_MOUNT_PATH"
