@@ -1,15 +1,12 @@
 package processors
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/errors"
@@ -75,25 +72,25 @@ func (p *VipsProcessor) CreateThumbnail(ctx context.Context, inputFilePath, outp
 	return result, nil
 }
 
-// CreateDZI generates Deep Zoom Image tiles for high-resolution image viewing
-func (p *VipsProcessor) CreateDZI(ctx context.Context, inputFilePath, outputDir string, timeoutMinutes int, cfg config.DZIConfig) (*CommandResult, error) {
+func (p *VipsProcessor) CreateDZI(ctx context.Context, inputFilePath, outputBase string, timeoutMinutes int, cfg config.DZIConfig) (*CommandResult, error) {
 	// Validate inputs
-	if err := p.validateDZIInputs(inputFilePath, outputDir, timeoutMinutes, cfg); err != nil {
+	if err := p.validateDZIInputs(inputFilePath, outputBase, timeoutMinutes, cfg); err != nil {
 		return nil, err
 	}
 
-	// Ensure output directory exists
+	// Create output directory if it doesn't exist
+	outputDir := filepath.Dir(outputBase)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, errors.WrapStorageError(err, "failed to create output directory").
 			WithContext("output_dir", outputDir)
 	}
 
-	suffixWithQuality := fmt.Sprintf("%s[Q=%d]", cfg.Suffix, cfg.Quality)
+	suffixWithQuality := fmt.Sprintf(".%s[Q=%d]", cfg.Suffix, cfg.Quality)
 
 	args := []string{
 		"dzsave",
 		inputFilePath,
-		outputDir,
+		outputBase, // vips dzsave uses base name without extension
 		"--layout", cfg.Layout,
 		"--suffix", suffixWithQuality,
 		"--tile-size", fmt.Sprintf("%d", cfg.TileSize),
@@ -107,56 +104,44 @@ func (p *VipsProcessor) CreateDZI(ctx context.Context, inputFilePath, outputDir 
 	if err != nil {
 		return result, errors.WrapProcessingError(err, "failed to create DZI tiles").
 			WithContext("input_file", inputFilePath).
-			WithContext("output_dir", outputDir).
+			WithContext("output_base", outputBase).
 			WithContext("tile_size", cfg.TileSize).
 			WithContext("layout", cfg.Layout)
 	}
 
-	// Verify DZI output was created
-	if err := p.verifyDZIOutput(outputDir); err != nil {
+	// Verify DZI output
+	dziFilesDir := outputBase + "_files"
+	if err := p.verifyDZIOutput(dziFilesDir); err != nil {
 		return result, err
 	}
 
 	return result, nil
 }
 
-func (p *VipsProcessor) validateThumbnailInputs(inputFilePath, outputFilePath string, width, height, quality int) error {
-	// Check input file exists
-	if _, err := os.Stat(inputFilePath); os.IsNotExist(err) {
-		return errors.NewValidationError("input file does not exist").
-			WithContext("input_file", inputFilePath)
+func (p *VipsProcessor) verifyDZIOutput(dziFilesDir string) error {
+	// Check if _files directory exists
+	info, err := os.Stat(dziFilesDir)
+	if os.IsNotExist(err) {
+		return errors.NewProcessingError("DZI files directory was not created").
+			WithContext("dzi_files_dir", dziFilesDir)
+	}
+	if err != nil {
+		return errors.WrapStorageError(err, "failed to verify DZI files directory").
+			WithContext("dzi_files_dir", dziFilesDir)
+	}
+	if !info.IsDir() {
+		return errors.NewProcessingError("DZI files path is not a directory").
+			WithContext("dzi_files_dir", dziFilesDir)
 	}
 
-	// Validate dimensions
-	if width <= 0 {
-		return errors.NewValidationError("width must be positive").
-			WithContext("width", width)
+	entries, err := os.ReadDir(dziFilesDir)
+	if err != nil {
+		return errors.WrapStorageError(err, "failed to read DZI files directory").
+			WithContext("dzi_files_dir", dziFilesDir)
 	}
-	if height <= 0 {
-		return errors.NewValidationError("height must be positive").
-			WithContext("height", height)
-	}
-
-	// Validate quality (JPEG quality range: 1-100)
-	if quality < 1 || quality > 100 {
-		return errors.NewValidationError("quality must be between 1 and 100").
-			WithContext("quality", quality)
-	}
-
-	// Check output file extension
-	ext := strings.ToLower(filepath.Ext(outputFilePath))
-	validExts := []string{".jpg", ".jpeg", ".png", ".webp"}
-	isValidExt := false
-	for _, validExt := range validExts {
-		if ext == validExt {
-			isValidExt = true
-			break
-		}
-	}
-	if !isValidExt {
-		return errors.NewValidationError("output file must have valid image extension (.jpg, .jpeg, .png, .webp)").
-			WithContext("output_file", outputFilePath).
-			WithContext("extension", ext)
+	if len(entries) == 0 {
+		return errors.NewProcessingError("DZI files directory is empty, no tiles were created").
+			WithContext("dzi_files_dir", dziFilesDir)
 	}
 
 	return nil
@@ -207,6 +192,48 @@ func (p *VipsProcessor) validateDZIInputs(inputFilePath, outputDir string, timeo
 	return nil
 }
 
+func (p *VipsProcessor) validateThumbnailInputs(inputFilePath, outputFilePath string, width, height, quality int) error {
+	// Check input file exists
+	if _, err := os.Stat(inputFilePath); os.IsNotExist(err) {
+		return errors.NewValidationError("input file does not exist").
+			WithContext("input_file", inputFilePath)
+	}
+
+	// Validate dimensions
+	if width <= 0 {
+		return errors.NewValidationError("width must be positive").
+			WithContext("width", width)
+	}
+	if height <= 0 {
+		return errors.NewValidationError("height must be positive").
+			WithContext("height", height)
+	}
+
+	// Validate quality (JPEG quality range: 1-100)
+	if quality < 1 || quality > 100 {
+		return errors.NewValidationError("quality must be between 1 and 100").
+			WithContext("quality", quality)
+	}
+
+	// Check output file extension
+	ext := strings.ToLower(filepath.Ext(outputFilePath))
+	validExts := []string{".jpg", ".jpeg", ".png", ".webp"}
+	isValidExt := false
+	for _, validExt := range validExts {
+		if ext == validExt {
+			isValidExt = true
+			break
+		}
+	}
+	if !isValidExt {
+		return errors.NewValidationError("output file must have valid image extension (.jpg, .jpeg, .png, .webp)").
+			WithContext("output_file", outputFilePath).
+			WithContext("extension", ext)
+	}
+
+	return nil
+}
+
 func (p *VipsProcessor) ensureOutputDirectory(outputFilePath string) error {
 	outputDir := filepath.Dir(outputFilePath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -231,130 +258,4 @@ func (p *VipsProcessor) verifyOutputFile(outputFilePath string) error {
 			WithContext("output_file", outputFilePath)
 	}
 	return nil
-}
-
-func (p *VipsProcessor) verifyDZIOutput(outputDir string) error {
-	// Check if output directory exists
-	info, err := os.Stat(outputDir)
-	if os.IsNotExist(err) {
-		return errors.NewProcessingError("output directory was not created").
-			WithContext("output_dir", outputDir)
-	}
-	if err != nil {
-		return errors.WrapStorageError(err, "failed to verify output directory").
-			WithContext("output_dir", outputDir)
-	}
-	if !info.IsDir() {
-		return errors.NewProcessingError("output path is not a directory").
-			WithContext("output_dir", outputDir)
-	}
-
-	// Check if directory contains any files
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return errors.WrapStorageError(err, "failed to read output directory").
-			WithContext("output_dir", outputDir)
-	}
-	if len(entries) == 0 {
-		return errors.NewProcessingError("output directory is empty, no tiles were created").
-			WithContext("output_dir", outputDir)
-	}
-
-	return nil
-}
-
-type ImageInfo struct {
-	Width  int
-	Height int
-	Size   int64
-}
-
-func (p *VipsProcessor) GetImageInfo(ctx context.Context, inputFilePath string) (*ImageInfo, error) {
-	fileInfo, err := os.Stat(inputFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	ext := strings.ToLower(filepath.Ext(inputFilePath))
-
-	switch ext {
-	case ".dng":
-		p.logger.Info("Detected RAW format, using ExifTool for dimensions", "file", inputFilePath)
-		return p.getDimensionsWithExifTool(ctx, inputFilePath, fileInfo.Size())
-
-	default:
-		return p.getDimensionsWithVips(ctx, inputFilePath, fileInfo.Size())
-	}
-}
-
-func (p *VipsProcessor) getDimensionsWithExifTool(ctx context.Context, inputFilePath string, size int64) (*ImageInfo, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	args := []string{"-ImageWidth", "-ImageHeight", "-s3", "-n", inputFilePath}
-	cmd := exec.CommandContext(ctx, "exiftool", args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		p.logger.Error("Exiftool failed", "stderr", stderr.String(), "error", err)
-		return nil, errors.WrapProcessingError(err, "failed to get dimensions with ExifTool")
-	}
-
-	output := strings.TrimSpace(stdout.String())
-	lines := strings.Split(output, "\n")
-
-	if len(lines) < 2 {
-		p.logger.Warn("Exiftool returned incomplete data, trying fallback parsing", "output", output)
-		return nil, errors.NewProcessingError("unexpected output from exiftool").WithContext("output", output)
-	}
-
-	var width, height int
-	fmt.Sscanf(strings.TrimSpace(lines[0]), "%d", &width)
-	fmt.Sscanf(strings.TrimSpace(lines[1]), "%d", &height)
-
-	if width == 0 || height == 0 {
-		return nil, errors.NewProcessingError("invalid dimensions detected").
-			WithContext("width", width).
-			WithContext("height", height)
-	}
-
-	return &ImageInfo{
-		Width:  width,
-		Height: height,
-		Size:   size,
-	}, nil
-}
-
-func (p *VipsProcessor) getDimensionsWithVips(ctx context.Context, inputFilePath string, size int64) (*ImageInfo, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	widthCmd := exec.CommandContext(ctx, "vipsheader", "-f", "width", inputFilePath)
-	var widthOut bytes.Buffer
-	widthCmd.Stdout = &widthOut
-	if err := widthCmd.Run(); err != nil {
-		p.logger.Error("vipsheader width lookup failed", "error", err)
-		return nil, err
-	}
-
-	heightCmd := exec.CommandContext(ctx, "vipsheader", "-f", "height", inputFilePath)
-	var heightOut bytes.Buffer
-	heightCmd.Stdout = &heightOut
-	if err := heightCmd.Run(); err != nil {
-		p.logger.Error("vipsheader height lookup failed", "error", err)
-		return nil, err
-	}
-
-	var width, height int
-	fmt.Sscanf(strings.TrimSpace(widthOut.String()), "%d", &width)
-	fmt.Sscanf(strings.TrimSpace(heightOut.String()), "%d", &height)
-
-	return &ImageInfo{
-		Width:  width,
-		Height: height,
-		Size:   size,
-	}, nil
 }
