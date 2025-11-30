@@ -30,41 +30,39 @@ func NewImageProcessingService(
 }
 
 func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.File) (*model.Workspace, error) {
-
 	workspace, err := model.NewWorkspace(file)
 	if err != nil {
 		return nil, errors.NewStorageError("failed to create workspace").
 			WithContext("fileID", file.ID)
 	}
+
+	processSuccess := false
+
 	defer func() {
-		if err := workspace.Remove(); err != nil {
-			s.logger.Warn("Failed to clean up workspace",
-				"fileID", file.ID,
-				"error", err)
+		if !processSuccess {
+			if err := workspace.Remove(); err != nil {
+				s.logger.Warn("Failed to clean up workspace on error",
+					"fileID", file.ID,
+					"error", err)
+			}
 		}
 	}()
 
-	// Step 1: Get basic image info
 	if err := s.GetImageInfo(ctx, file); err != nil {
 		return nil, err
 	}
 
-	// Step 3: Handle DNG conversion if needed
 	if s.isDNGFile(file) {
-
 		err := s.ConvertDNGToTIFF(ctx, workspace)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Step 4: Generate Thumbnail
-	err = s.GenerateThumbnail(ctx, workspace)
-	if err != nil {
+	if err := s.GenerateThumbnail(ctx, workspace); err != nil {
 		return nil, err
 	}
 
-	// Step 5: Generate DZI
 	if err := s.GenerateDZI(ctx, workspace); err != nil {
 		return nil, err
 	}
@@ -72,8 +70,8 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 	s.logger.Info("File processing workflow completed successfully",
 		"fileID", file.ID)
 
+	processSuccess = true
 	return workspace, nil
-
 }
 
 func (s *ImageProcessingService) GetImageInfo(ctx context.Context, file *model.File) error {
@@ -107,10 +105,16 @@ func (s *ImageProcessingService) ConvertDNGToTIFF(ctx context.Context, workspace
 
 	result, err := s.dcrawProcessor.DNGToTIFF(ctx, inputFilePath, outputFilePath, s.config.ImageProcessTimeoutMinute.FormatConversion)
 	if err != nil {
+		stdout := ""
+		stderr := ""
+		if result != nil {
+			stdout = result.Stdout
+			stderr = result.Stderr
+		}
 		s.logger.Error("DNG to TIFF conversion failed",
 			"fileID", workspace.File().ID,
-			"stdout", result.Stdout,
-			"stderr", result.Stderr,
+			"stdout", stdout,
+			"stderr", stderr,
 			"error", err)
 		return err
 	}
@@ -132,17 +136,24 @@ func (s *ImageProcessingService) GenerateThumbnail(ctx context.Context, workspac
 		"filename", workspace.File().Filename)
 
 	inputFilePath := workspace.File().AbsolutePath()
-	outputFilePath := workspace.Join(workspace.File().BaseName() + "_thumbnail.jpg")
+	outputFilePath := workspace.Join("thumbnail.jpg")
+
 	result, err := s.vipsProcessor.CreateThumbnail(ctx, inputFilePath, outputFilePath,
 		s.config.ThumbnailConfig.Width,
 		s.config.ThumbnailConfig.Height,
 		s.config.ThumbnailConfig.Quality)
 
 	if err != nil {
+		stdout := ""
+		stderr := ""
+		if result != nil {
+			stdout = result.Stdout
+			stderr = result.Stderr
+		}
 		s.logger.Error("Thumbnail generation failed",
 			"fileID", workspace.File().ID,
-			"stdout", result.Stdout,
-			"stderr", result.Stderr,
+			"stdout", stdout,
+			"stderr", stderr,
 			"error", err)
 		return err
 	}
@@ -158,26 +169,34 @@ func (s *ImageProcessingService) GenerateDZI(ctx context.Context, workspace *mod
 	s.logger.Info("Generating DZI",
 		"fileID", workspace.File().ID,
 		"filename", workspace.File().Filename)
+
 	inputFilePath := workspace.File().AbsolutePath()
-	outputDir := workspace.Dir()
+	outputBase := workspace.Join("image")
 
 	result, err := s.vipsProcessor.CreateDZI(ctx,
 		inputFilePath,
-		outputDir,
+		outputBase,
 		s.config.ImageProcessTimeoutMinute.DZIConversion,
 		s.config.DZIConfig)
+
 	if err != nil {
+		stdout := ""
+		stderr := ""
+		if result != nil {
+			stdout = result.Stdout
+			stderr = result.Stderr
+		}
 		s.logger.Error("DZI generation failed",
 			"fileID", workspace.File().ID,
-			"stdout", result.Stdout,
-			"stderr", result.Stderr,
+			"stdout", stdout,
+			"stderr", stderr,
 			"error", err)
 		return err
 	}
 
 	s.logger.Info("DZI generation succeeded",
 		"fileID", workspace.File().ID,
-		"outputDir", outputDir)
+		"outputBase", outputBase)
 
 	return nil
 }
