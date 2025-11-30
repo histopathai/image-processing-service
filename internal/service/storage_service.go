@@ -83,8 +83,6 @@ func (s *StorageService) uploadFile(ctx context.Context, sourcePath, destPath st
 			WithContext("source_path", sourcePath).
 			WithContext("dest_path", destPath)
 	}
-
-	s.logger.Info("Uploaded file", "source", sourcePath, "destination", destPath)
 	return nil
 }
 

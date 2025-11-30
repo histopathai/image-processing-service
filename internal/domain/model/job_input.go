@@ -2,7 +2,6 @@ package model
 
 import "fmt"
 
-// JobInput represents the input parameters for the image processing job
 type JobInput struct {
 	ImageID    string
 	OriginPath string
