@@ -8,7 +8,7 @@ image_tag = "latest"
 log_level = "INFO"
 
 # DZI Configuration
-tile_size   = 256
+tile_size   = 512
 overlap     = 0
 quality     = 85
 dzi_layout  = "dz"
