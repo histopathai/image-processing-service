@@ -41,21 +41,21 @@ locals {
   # Job configurations
   job_configs = {
     small = {
-      cpu      = "1"
-      memory   = "4Gi"
-      timeout  = "1800s" # 30 minutes
+      cpu         = "1"
+      memory      = "4Gi"
+      timeout     = "1800s" # 30 minutes
       max_retries = 3
     }
     medium = {
-      cpu      = "2"
-      memory   = "8Gi"
-      timeout  = "7200s" # 120 minutes
+      cpu         = "2"
+      memory      = "8Gi"
+      timeout     = "7200s" # 120 minutes
       max_retries = 2
     }
     large = {
-      cpu      = "4"
-      memory   = "16Gi"
-      timeout  = "7200s" # 120 minutes
+      cpu         = "4"
+      memory      = "16Gi"
+      timeout     = "7200s" # 120 minutes
       max_retries = 1
     }
   }
