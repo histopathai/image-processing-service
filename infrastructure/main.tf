@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
   }
   backend "gcs" {
     prefix = "services/image-processing-service"
@@ -66,8 +70,14 @@ provider "google" {
   region  = local.region
 }
 
+provider "google-beta" {
+  project = local.project_id
+  region  = local.region
+}
+
 # Create Cloud Run Jobs for each size
 resource "google_cloud_run_v2_job" "image_processing_job" {
+  provider = google-beta
   for_each = local.job_configs
 
   name     = var.environment == "prod" ? "image-processing-job-${each.key}" : "image-processing-job-${each.key}-${var.environment}"
@@ -213,6 +223,7 @@ resource "google_cloud_run_v2_job" "image_processing_job" {
 
 # Grant the main service permission to execute the jobs
 resource "google_cloud_run_v2_job_iam_member" "executor" {
+  provider = google-beta
   for_each = google_cloud_run_v2_job.image_processing_job
 
   project  = each.value.project
