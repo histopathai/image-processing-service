@@ -91,7 +91,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		)
 	}
 
-	o.publishSuccessEvent(ctx, input.ImageID, file, FinalOutputPath)
+	o.publishSuccessEvent(ctx, input.ImageID, file, input.ImageID)
 
 	o.logger.Info("Image processing job completed successfully",
 		"imageID", input.ImageID,
