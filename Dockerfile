@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y \
 # Copy the binary from builder
 COPY --from=builder /app/image-processing-service /app/image-processing-service
 
+COPY --from=builder /app/supported_formats.json /app/supported_formats.json
+
 WORKDIR /app
 
 # Expose port 8080 for Cloud Run

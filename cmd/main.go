@@ -56,7 +56,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if err := utils.LoadSupportedFormats("/Users/yasin/Projects/histopathai/image-processing-service/supported_formats.json"); err != nil {
+	if err := utils.LoadSupportedFormats("./supported_formats.json"); err != nil {
 		return fmt.Errorf("failed to load supported formats: %w", err)
 	}
 
