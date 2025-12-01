@@ -96,7 +96,6 @@ func (p *VipsProcessor) CreateDZI(ctx context.Context, inputFilePath, outputBase
 		"--tile-size", fmt.Sprintf("%d", cfg.TileSize),
 		"--overlap", fmt.Sprintf("%d", cfg.Overlap),
 		"--background", "255",
-		"--depth", "onetile",
 	}
 
 	result, err := p.Execute(ctx, args, timeoutMinutes)
