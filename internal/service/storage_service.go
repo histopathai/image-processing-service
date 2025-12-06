@@ -71,7 +71,9 @@ func (s *StorageService) uploadDirectoryToGCS(ctx context.Context, sourceDir, de
 
 		g.Go(func() error {
 			sourcePath := fileInfo.SourcePath
-			destKey := fileInfo.DestKey
+			fullDestKey := filepath.Join(destPath, fileInfo.DestKey)
+			fullDestKey = filepath.ToSlash(fullDestKey)
+			destKey := fullDestKey
 
 			if err := s.uploadFileToGCS(ctx, sourcePath, destKey); err != nil {
 				mu.Lock()
@@ -86,7 +88,7 @@ func (s *StorageService) uploadDirectoryToGCS(ctx context.Context, sourceDir, de
 
 			mu.Lock()
 			uploaded++
-			if uploaded%100 == 0 {
+			if uploaded%1000 == 0 {
 				s.logger.Info("Upload progress",
 					"uploaded", uploaded,
 					"total", len(files))
