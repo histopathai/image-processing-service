@@ -66,6 +66,12 @@ type ThumbnailConfig struct {
 	Quality int
 }
 
+type StorageConfig struct {
+	UseGCSUpload       bool // true = GCS SDK, false = mount
+	MaxParallelUploads int
+	UploadChunkSizeMB  int
+}
+
 type Config struct {
 	Env                       Environment
 	WorkerType                WorkerType
@@ -76,6 +82,7 @@ type Config struct {
 	DZIConfig                 DZIConfig
 	ThumbnailConfig           ThumbnailConfig
 	ImageProcessTimeoutMinute ImageProcessTimeoutMinute
+	Storage                   StorageConfig
 }
 
 func LoadConfig(logger *slog.Logger) (*Config, error) {
@@ -141,6 +148,17 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 		General:          timeoutGeneral,
 	}
 
+	// Storage configuration
+	useGCSUpload := getEnv("USE_GCS_UPLOAD", "true") == "true"
+	maxParallelUploads, _ := strconv.Atoi(getEnv("MAX_PARALLEL_UPLOADS", "20"))
+	uploadChunkSizeMB, _ := strconv.Atoi(getEnv("UPLOAD_CHUNK_SIZE_MB", "16"))
+
+	storageConfig := StorageConfig{
+		UseGCSUpload:       useGCSUpload,
+		MaxParallelUploads: maxParallelUploads,
+		UploadChunkSizeMB:  uploadChunkSizeMB,
+	}
+
 	config := &Config{
 		Env:                       env,
 		WorkerType:                workerType,
@@ -151,11 +169,13 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 		DZIConfig:                 dziConfig,
 		ThumbnailConfig:           thumbnailConfig,
 		ImageProcessTimeoutMinute: imageProcessTimeout,
+		Storage:                   storageConfig,
 	}
 
 	logger.Info("Configuration loaded",
 		"env", config.Env,
-		"worker_type", config.WorkerType)
+		"worker_type", config.WorkerType,
+		"use_gcs_upload", config.Storage.UseGCSUpload)
 	return config, nil
 }
 

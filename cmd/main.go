@@ -82,14 +82,12 @@ func run(ctx context.Context) error {
 		}
 	}()
 
-	storageService := service.NewStorageService(log)
-
 	// Create job orchestrator
 	orchestrator := service.NewJobOrchestrator(
 		log,
 		cfg,
 		cnt.ImageProcessingService,
-		storageService,
+		cnt.StorageService,
 		cnt.Publisher,
 		cnt.EventSerializer,
 	)

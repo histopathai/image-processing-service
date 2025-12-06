@@ -45,6 +45,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		"imageID", input.ImageID,
 		"originPath", input.OriginPath,
 		"bucketName", input.BucketName,
+		"use_gcs_upload", o.config.Storage.UseGCSUpload,
 	)
 
 	inputPath := o.constructInputPath(input)
@@ -76,13 +77,25 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		return err
 	}
 
-	FinalOutputPath := o.constructOutputPath(input.ImageID)
+	finalOutputPath := o.constructOutputPath(input.ImageID)
 
-	if err := o.storageService.UploadDirectory(ctx, outputWorkspace.Dir(), FinalOutputPath); err != nil {
+	o.logger.Info("Starting upload",
+		"imageID", input.ImageID,
+		"source", outputWorkspace.Dir(),
+		"destination", finalOutputPath,
+		"method", o.getUploadMethod(),
+	)
+
+	if err := o.storageService.UploadDirectory(ctx, outputWorkspace.Dir(), finalOutputPath); err != nil {
 		retryable := !errors.IsNonRetryable(err)
 		o.publishFailureEvent(ctx, input.ImageID, err, retryable)
 		return err
 	}
+
+	o.logger.Info("Upload completed successfully",
+		"imageID", input.ImageID,
+		"method", o.getUploadMethod(),
+	)
 
 	if err := outputWorkspace.Remove(); err != nil {
 		o.logger.Warn("Failed to clean up output workspace",
@@ -100,7 +113,15 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	return nil
 }
 
+func (o *JobOrchestrator) getUploadMethod() string {
+	if o.config.Storage.UseGCSUpload {
+		return "gcs_sdk_parallel"
+	}
+	return "mount_copy"
+}
+
 func (o *JobOrchestrator) constructInputPath(input *model.JobInput) string {
+
 	if o.config.Env == config.EnvLocal {
 		return input.OriginPath
 	}
@@ -108,6 +129,11 @@ func (o *JobOrchestrator) constructInputPath(input *model.JobInput) string {
 }
 
 func (o *JobOrchestrator) constructOutputPath(imageID string) string {
+	// if GCS upload is used and not local env, return imageID as is
+	if o.config.Storage.UseGCSUpload && o.config.Env != config.EnvLocal {
+		return imageID
+	}
+	// otherwise, construct full path
 	if o.config.Env == config.EnvLocal {
 		return filepath.Join(o.config.MountPath.OutputMountPath, imageID)
 	}

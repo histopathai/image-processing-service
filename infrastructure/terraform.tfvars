@@ -14,6 +14,12 @@ quality     = 85
 dzi_layout  = "dz"
 dzi_suffix  = "jpg"
 
+#Storage Configuration
+use_gcs_upload       = true
+max_parallel_uploads = "20"  # 20 files uploaded concurrently
+upload_chunk_size_mb = "16"  # 16MB chunk size
+
+
 # Thumbnail Configuration
 thumbnail_size    = 256
 thumbnail_quality = 90

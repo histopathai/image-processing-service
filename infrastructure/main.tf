@@ -183,6 +183,23 @@ resource "google_cloud_run_v2_job" "image_processing_job" {
           name  = "OUTPUT_MOUNT_PATH"
           value = local.output_mount_path
         }
+
+        # Storage configuration
+        env {
+          name  = "USE_GCS_UPLOAD"
+          value = var.use_gcs_upload ? "true" : "false"
+        }
+        env {
+          name  = "MAX_PARALLEL_UPLOADS"
+          value = var.max_parallel_uploads
+        }
+        env {
+          name  = "UPLOAD_CHUNK_SIZE_MB"
+          value = var.upload_chunk_size_mb
+        }
+        
+
+        # Image processing configuration
         env {
           name  = "TILE_SIZE"
           value = var.tile_size

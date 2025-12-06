@@ -19,6 +19,24 @@ variable "log_level" {
   }
 }
 
+variable "use_gcs_upload" {
+  description = "Use GCS SDK for parallel uploads (true) or mount copy (false)"
+  type        = bool
+  default     = true
+}
+
+variable "max_parallel_uploads" {
+  description = "Maximum number of parallel uploads when using GCS SDK"
+  type        = string
+  default     = "20"
+}
+
+variable "upload_chunk_size_mb" {
+  description = "Upload chunk size in MB for GCS SDK"
+  type        = string
+  default     = "16"
+}
+
 variable "tile_size" {
   description = "DZI tile size"
   type        = number
