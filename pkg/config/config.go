@@ -40,11 +40,13 @@ type LoggingConfig struct {
 }
 
 type DZIConfig struct {
-	TileSize int
-	Overlap  int
-	Quality  int
-	Layout   string
-	Suffix   string
+	TileSize    int
+	Overlap     int
+	Quality     int
+	Layout      string
+	Suffix      string
+	Container   string
+	Compression int
 }
 
 type ImageProcessTimeoutMinute struct {
@@ -102,12 +104,27 @@ func LoadDZIConfig() DZIConfig {
 	if suffix == "" {
 		suffix = "jpg"
 	}
+
+	container := os.Getenv("DZI_CONTAINER")
+	if container != "zip" {
+		container = "fs"
+	}
+
+	compression, err := strconv.Atoi(os.Getenv("DZI_COMPRESSION"))
+	if err != nil {
+		compression = 0
+	}
+	if compression < 0 || compression > 9 {
+		compression = 0
+	}
 	return DZIConfig{
-		TileSize: tileSize,
-		Overlap:  overlap,
-		Quality:  quality,
-		Layout:   layout,
-		Suffix:   suffix,
+		TileSize:    tileSize,
+		Overlap:     overlap,
+		Quality:     quality,
+		Layout:      layout,
+		Suffix:      suffix,
+		Container:   container,
+		Compression: compression,
 	}
 }
 
