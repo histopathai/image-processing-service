@@ -5,19 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/histopathai/image-processing-service/pkg/errors"
 )
 
-type ZipIndexProcessor struct {
+type ZipProcessor struct {
 	*BaseProcessor
 }
 
-func NewZipIndexProcessor() *ZipIndexProcessor {
-	return &ZipIndexProcessor{
-		BaseProcessor: NewBaseProcessor(nil, "zip-index-internal"),
+func NewZipProcessor(logger *slog.Logger) *ZipProcessor {
+	return &ZipProcessor{
+		BaseProcessor: NewBaseProcessor(logger, "zip-index-internal"),
 	}
 }
 
@@ -35,7 +36,7 @@ type ZipIndexMap struct {
 	Entries []ZipEntryIndex `json:"entries"`
 }
 
-func (z *ZipIndexProcessor) BuildIndexMap(
+func (z *ZipProcessor) BuildIndexMap(
 	ctx context.Context,
 	zipPath string,
 	destDir string,
@@ -95,7 +96,7 @@ func (z *ZipIndexProcessor) BuildIndexMap(
 	return nil
 }
 
-func (z *ZipIndexProcessor) ExtractDesiredFile(
+func (z *ZipProcessor) ExtractDesiredFile(
 	ctx context.Context,
 	zipPath string,
 	targetFile string,
