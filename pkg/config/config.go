@@ -24,20 +24,14 @@ const (
 	WorkerTypeLarge  WorkerType = "large"
 )
 
+// GCPConfig holds Google Cloud Platform related configuration.
 type GCPConfig struct {
-	ProjectID        string
-	Region           string
-	InputBucketName  string
-	OutputBucketName string
-}
-
-type MountPath struct {
-	InputMountPath  string
-	OutputMountPath string
-}
-
-type PubSubConfig struct {
-	ImageProcessResultTopicID string
+	ProjectID          string
+	Region             string
+	InputBucketName    string
+	OutputBucketName   string
+	MaxParallelUploads int
+	UploadChunkSizeMB  int
 }
 
 type LoggingConfig struct {
@@ -66,25 +60,116 @@ type ThumbnailConfig struct {
 	Quality int
 }
 
-type StorageConfig struct {
-	UseGCSUpload       bool // true = GCS SDK, false = mount
-	MaxParallelUploads int
-	UploadChunkSizeMB  int
-}
-
 type Config struct {
 	Env                       Environment
 	WorkerType                WorkerType
 	GCP                       GCPConfig
-	MountPath                 MountPath
-	PubSubConfig              PubSubConfig
+	OutputRootPath            string
 	Logging                   LoggingConfig
 	DZIConfig                 DZIConfig
 	ThumbnailConfig           ThumbnailConfig
 	ImageProcessTimeoutMinute ImageProcessTimeoutMinute
-	Storage                   StorageConfig
+	ImageProcessingTopicID    string
 }
 
+func LoadGCPConfig() GCPConfig {
+	return GCPConfig{
+		ProjectID:        os.Getenv("PROJECT_ID"),
+		Region:           os.Getenv("REGION"),
+		InputBucketName:  os.Getenv("ORIGINAL_BUCKET_NAME"),
+		OutputBucketName: os.Getenv("PROCESSED_BUCKET_NAME"),
+	}
+}
+
+func LoadDZIConfig() DZIConfig {
+	tileSize, err := strconv.Atoi(os.Getenv("TILE_SIZE"))
+	if err != nil {
+		tileSize = 256
+	}
+	overlap, err := strconv.Atoi(os.Getenv("OVERLAP"))
+	if err != nil {
+		overlap = 0
+	}
+	quality, err := strconv.Atoi(os.Getenv("QUALITY"))
+	if err != nil {
+		quality = 85
+	}
+	layout := os.Getenv("DZI_LAYOUT")
+	if layout == "" {
+		layout = "dz"
+	}
+	suffix := os.Getenv("DZI_SUFFIX")
+	if suffix == "" {
+		suffix = "jpg"
+	}
+	return DZIConfig{
+		TileSize: tileSize,
+		Overlap:  overlap,
+		Quality:  quality,
+		Layout:   layout,
+		Suffix:   suffix,
+	}
+}
+
+func LoadThumbnailConfig() ThumbnailConfig {
+	width, err := strconv.Atoi(os.Getenv("THUMBNAIL_SIZE"))
+	if err != nil {
+		width = 256
+	}
+	height, err := strconv.Atoi(os.Getenv("THUMBNAIL_SIZE"))
+	if err != nil {
+		height = 256
+	}
+	quality, err := strconv.Atoi(os.Getenv("THUMBNAIL_QUALITY"))
+	if err != nil {
+		quality = 90
+	}
+	return ThumbnailConfig{
+		Width:   width,
+		Height:  height,
+		Quality: quality,
+	}
+}
+
+func LoadTimeoutConfig() ImageProcessTimeoutMinute {
+	formatConversion, err := strconv.Atoi(os.Getenv("FORMAT_CONVERSION_TIMEOUT_MINUTE"))
+	if err != nil {
+		formatConversion = 20
+	}
+	dziConversion, err := strconv.Atoi(os.Getenv("DZI_CONVERSION_TIMEOUT_MINUTE"))
+	if err != nil {
+		dziConversion = 120
+	}
+	thumbnail, err := strconv.Atoi(os.Getenv("THUMBNAIL_TIMEOUT_MINUTE"))
+	if err != nil {
+		thumbnail = 10
+	}
+	general, err := strconv.Atoi(os.Getenv("GENERAL_IMAGE_PROCESS_TIMEOUT_MINUTE"))
+	if err != nil {
+		general = 10
+	}
+	return ImageProcessTimeoutMinute{
+		FormatConversion: formatConversion,
+		DZIConversion:    dziConversion,
+		Thumbnail:        thumbnail,
+		General:          general,
+	}
+}
+
+func LoadLoggingConfig() LoggingConfig {
+	level := os.Getenv("LOG_LEVEL")
+	if level == "" {
+		level = "INFO"
+	}
+	format := os.Getenv("LOG_FORMAT")
+	if format == "" {
+		format = "json"
+	}
+	return LoggingConfig{
+		Level:  level,
+		Format: format,
+	}
+}
 func LoadConfig(logger *slog.Logger) (*Config, error) {
 	if err := godotenv.Load(); err != nil {
 		logger.Warn("No .env file found, using environment variables")
@@ -92,90 +177,34 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	env := Environment(getEnv("APP_ENV", "LOCAL"))
 	workerType := WorkerType(getEnv("WORKER_TYPE", "medium"))
+	imageProcessingTopicID := getEnv("IMAGE_PROCESSING_TOPIC_ID", "image-processing-tasks")
 
-	tileSize, _ := strconv.Atoi(getEnv("TILE_SIZE", "256"))
-	overlap, _ := strconv.Atoi(getEnv("OVERLAP", "0"))
-	quality, _ := strconv.Atoi(getEnv("QUALITY", "85"))
-	layout := getEnv("DZI_LAYOUT", "dz")
-	suffix := getEnv("DZI_SUFFIX", "jpg")
-	dziConfig := DZIConfig{
-		TileSize: tileSize,
-		Overlap:  overlap,
-		Quality:  quality,
-		Layout:   layout,
-		Suffix:   suffix,
-	}
-
-	thumbSize, _ := strconv.Atoi(getEnv("THUMBNAIL_SIZE", "256"))
-	thumbQuality, _ := strconv.Atoi(getEnv("THUMBNAIL_QUALITY", "90"))
-
-	thumbnailConfig := ThumbnailConfig{
-		Width:   thumbSize,
-		Height:  thumbSize,
-		Quality: thumbQuality,
-	}
-
-	gcpConfig := GCPConfig{
-		ProjectID:        getEnv("PROJECT_ID", ""),
-		Region:           getEnv("REGION", ""),
-		InputBucketName:  getEnv("ORIGINAL_BUCKET_NAME", ""),
-		OutputBucketName: getEnv("PROCESSED_BUCKET_NAME", ""),
-	}
-
-	mountPath := MountPath{
-		InputMountPath:  getEnv("INPUT_MOUNT_PATH", "/mnt/input"),
-		OutputMountPath: getEnv("OUTPUT_MOUNT_PATH", "/mnt/output"),
-	}
-
-	pubsubConfig := PubSubConfig{
-		ImageProcessResultTopicID: getEnv("IMAGE_PROCESS_RESULT_TOPIC_ID", ""),
-	}
-
-	loggingConfig := LoggingConfig{
-		Level:  getEnv("LOG_LEVEL", "INFO"),
-		Format: getEnv("LOG_FORMAT", "json"),
-	}
-
-	timeoutFormatConversion, _ := strconv.Atoi(getEnv("FORMAT_CONVERSION_TIMEOUT_MINUTE", "20"))
-	timeoutDZIConversion, _ := strconv.Atoi(getEnv("DZI_CONVERSION_TIMEOUT_MINUTE", "120"))
-	timeoutThumbnail, _ := strconv.Atoi(getEnv("THUMBNAIL_TIMEOUT_MINUTE", "10"))
-	timeoutGeneral, _ := strconv.Atoi(getEnv("GENERAL_IMAGE_PROCESS_TIMEOUT_MINUTE", "10"))
-
-	imageProcessTimeout := ImageProcessTimeoutMinute{
-		FormatConversion: timeoutFormatConversion,
-		DZIConversion:    timeoutDZIConversion,
-		Thumbnail:        timeoutThumbnail,
-		General:          timeoutGeneral,
-	}
-
-	// Storage configuration
-	useGCSUpload := getEnv("USE_GCS_UPLOAD", "true") == "true"
-	maxParallelUploads, _ := strconv.Atoi(getEnv("MAX_PARALLEL_UPLOADS", "20"))
-	uploadChunkSizeMB, _ := strconv.Atoi(getEnv("UPLOAD_CHUNK_SIZE_MB", "16"))
-
-	storageConfig := StorageConfig{
-		UseGCSUpload:       useGCSUpload,
-		MaxParallelUploads: maxParallelUploads,
-		UploadChunkSizeMB:  uploadChunkSizeMB,
+	dziConfig := LoadDZIConfig()
+	thumbnailConfig := LoadThumbnailConfig()
+	timeoutConfig := LoadTimeoutConfig()
+	loggingConfig := LoadLoggingConfig()
+	var outputRootPath string
+	var gcpConfig GCPConfig
+	if env == EnvLocal {
+		outputRootPath = getEnv("OUTPUT_ROOT_PATH", "./output")
+		gcpConfig = GCPConfig{}
+	} else {
+		outputRootPath = ""
+		gcpConfig = LoadGCPConfig()
 	}
 
 	config := &Config{
 		Env:                       env,
 		WorkerType:                workerType,
+		OutputRootPath:            outputRootPath,
 		GCP:                       gcpConfig,
-		MountPath:                 mountPath,
-		PubSubConfig:              pubsubConfig,
 		Logging:                   loggingConfig,
 		DZIConfig:                 dziConfig,
 		ThumbnailConfig:           thumbnailConfig,
-		ImageProcessTimeoutMinute: imageProcessTimeout,
-		Storage:                   storageConfig,
+		ImageProcessTimeoutMinute: timeoutConfig,
+		ImageProcessingTopicID:    imageProcessingTopicID,
 	}
 
-	logger.Info("Configuration loaded",
-		"env", config.Env,
-		"worker_type", config.WorkerType,
-		"use_gcs_upload", config.Storage.UseGCSUpload)
 	return config, nil
 }
 
