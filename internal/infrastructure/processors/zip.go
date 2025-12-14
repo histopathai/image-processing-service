@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -34,7 +35,7 @@ type ZipIndexMap struct {
 	Entries []ZipEntryIndex `json:"entries"`
 }
 
-func (p *ZipIndexProcessor) BuildIndexMap(
+func (z *ZipIndexProcessor) BuildIndexMap(
 	ctx context.Context,
 	zipPath string,
 	destDir string,
@@ -89,6 +90,56 @@ func (p *ZipIndexProcessor) BuildIndexMap(
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(index); err != nil {
 		return errors.WrapProcessingError(err, "failed to write index map")
+	}
+
+	return nil
+}
+
+func (z *ZipIndexProcessor) ExtractDesiredFile(
+	ctx context.Context,
+	zipPath string,
+	targetFile string,
+	destPath string,
+) error {
+
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return errors.WrapStorageError(err, "failed to open zip").
+			WithContext("zip", zipPath)
+	}
+	defer r.Close()
+
+	var file *zip.File
+	for _, f := range r.File {
+		if f.Name == targetFile {
+			file = f
+			break
+		}
+	}
+
+	if file == nil {
+		return errors.NewNotFoundError("file not found in zip").
+			WithContext("file", targetFile).
+			WithContext("zip", zipPath)
+	}
+
+	rc, err := file.Open()
+	if err != nil {
+		return errors.WrapStorageError(err, "failed to open target file in zip").
+			WithContext("file", targetFile)
+	}
+	defer rc.Close()
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return errors.WrapStorageError(err, "failed to create dest file").
+			WithContext("file", destPath)
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, rc)
+	if err != nil {
+		return errors.WrapProcessingError(err, "failed to copy file content")
 	}
 
 	return nil
