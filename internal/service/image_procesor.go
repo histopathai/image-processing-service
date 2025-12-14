@@ -15,6 +15,7 @@ type ImageProcessingService struct {
 	dcrawProcessor    *processors.DcrawProcessor
 	vipsProcessor     *processors.VipsProcessor
 	fileInfoProcessor *processors.ImageInfoProcessor
+	zipProcessor      *processors.ZipProcessor
 	config            *config.Config
 }
 
@@ -27,6 +28,7 @@ func NewImageProcessingService(
 		dcrawProcessor:    processors.NewDcrawProcessor(logger),
 		vipsProcessor:     processors.NewVipsProcessor(logger),
 		fileInfoProcessor: processors.NewImageInfoProcessor(logger),
+		zipProcessor:      processors.NewZipProcessor(logger),
 		config:            cfg,
 	}
 }
@@ -57,6 +59,14 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 	}
 
 	if err := s.GenerateDZI(ctx, file, workspace); err != nil {
+		return nil, err
+	}
+
+	if err := s.zipProcessor.BuildIndexMap(ctx, workspace.Join(file.Filename), workspace.Dir()); err != nil {
+		return nil, err
+	}
+	dzifilename := file.BaseName() + ".dzi"
+	if err := s.zipProcessor.ExtractDesiredFile(ctx, workspace.Join(file.Filename), dzifilename, workspace.Join(dzifilename)); err != nil {
 		return nil, err
 	}
 
