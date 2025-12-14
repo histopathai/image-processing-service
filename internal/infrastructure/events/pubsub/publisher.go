@@ -43,5 +43,9 @@ func (p *Publisher) Publish(ctx context.Context, topicID string, data []byte, at
 	return nil
 }
 
+func (p *Publisher) Close() error {
+	return p.client.Close()
+}
+
 // Ensure Publisher implements the EventPublisher interface
-var _ port.Publisher = (*Publisher)(nil)
+var _ port.EventPublisher = (*Publisher)(nil)

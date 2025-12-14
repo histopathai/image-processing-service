@@ -29,4 +29,8 @@ func (p *Publisher) Publish(ctx context.Context, topicID string, data []byte, at
 	return nil
 }
 
-var _ port.Publisher = (*Publisher)(nil)
+func (p *Publisher) Close() error {
+	return nil
+}
+
+var _ port.EventPublisher = (*Publisher)(nil)
