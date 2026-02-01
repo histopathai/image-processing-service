@@ -12,7 +12,8 @@ terraform {
     }
   }
   backend "gcs" {
-    prefix = "services/image-processing-service"
+    # Prefix is configured at runtime via -backend-config
+    # prefix = "services/image-processing-service" 
   }
 }
 
@@ -197,7 +198,7 @@ resource "google_cloud_run_v2_job" "image_processing_job" {
           name  = "UPLOAD_CHUNK_SIZE_MB"
           value = var.upload_chunk_size_mb
         }
-        
+
 
         # Image processing configuration
         env {
