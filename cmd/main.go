@@ -92,6 +92,7 @@ func run(ctx context.Context) error {
 func getJobInput() (*model.JobInput, error) {
 	imageID := os.Getenv("INPUT_IMAGE_ID")
 	originPath := os.Getenv("INPUT_ORIGIN_PATH")
+	processingVersion := os.Getenv("PROCESSING_VERSION")
 
-	return model.NewJobInputFromEnv(imageID, originPath)
+	return model.NewJobInputFromEnv(imageID, originPath, processingVersion)
 }

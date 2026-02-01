@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/histopathai/image-processing-service/internal/domain/events"
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/internal/domain/port"
+	"github.com/histopathai/image-processing-service/internal/domain/vobj"
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/errors"
 )
@@ -55,19 +58,56 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		nil, nil, nil, nil,
 	)
 	if err != nil {
-		retryable := !errors.IsNonRetryable(err)
-		o.publishFailureEvent(ctx, input.ImageID, err, retryable)
+		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			ImageID:           input.ImageID,
+			ProcessingVersion: input.ProcessingVersion,
+			Success:           false,
+			FailureReason:     err.Error(),
+			Retryable:         !errors.IsNonRetryable(err),
+		})
 		return err
 	}
+	var container string
+	if input.ProcessingVersion == "v1" {
+		container = "fs"
+	} else {
+		container = "zip"
+	}
 
-	outputWorkspace, err := o.imageProcessingService.ProcessFile(ctx, file)
+	outputWorkspace, err := o.imageProcessingService.ProcessFile(ctx, file, container)
 	if err != nil {
-		retryable := !errors.IsNonRetryable(err)
-		o.publishFailureEvent(ctx, input.ImageID, err, retryable)
+		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			ImageID:           input.ImageID,
+			ProcessingVersion: input.ProcessingVersion,
+			Success:           false,
+			FailureReason:     err.Error(),
+			Retryable:         !errors.IsNonRetryable(err),
+		})
 		return err
 	}
 
 	finalOutputPath := o.constructOutputPath(input.ImageID)
+
+	o.logger.Info("Preparing contents", "imageID", input.ImageID)
+
+	var contentProvider vobj.ContentProvider
+	if o.config.Env == config.EnvLocal {
+		contentProvider = vobj.ContentProviderLocal
+	} else {
+		contentProvider = vobj.ContentProviderGCS
+	}
+
+	contents, err := o.prepareContents(input, outputWorkspace.Dir(), finalOutputPath, contentProvider)
+	if err != nil {
+		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			ImageID:           input.ImageID,
+			ProcessingVersion: input.ProcessingVersion,
+			Success:           false,
+			FailureReason:     fmt.Sprintf("failed to prepare contents: %v", err),
+			Retryable:         false,
+		})
+		return err
+	}
 
 	o.logger.Info("Starting upload",
 		"imageID", input.ImageID,
@@ -76,8 +116,13 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	)
 
 	if err := o.storage.UploadDirectory(ctx, outputWorkspace.Dir(), finalOutputPath); err != nil {
-		retryable := !errors.IsNonRetryable(err)
-		o.publishFailureEvent(ctx, input.ImageID, err, retryable)
+		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			ImageID:           input.ImageID,
+			ProcessingVersion: input.ProcessingVersion,
+			Success:           false,
+			FailureReason:     err.Error(),
+			Retryable:         !errors.IsNonRetryable(err),
+		})
 		return err
 	}
 
@@ -86,7 +131,22 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		"destination", finalOutputPath,
 	)
 
-	o.publishSuccessEvent(ctx, input.ImageID, file, input.ImageID)
+	var eventContents []model.Content
+	for _, c := range contents {
+		eventContents = append(eventContents, *c)
+	}
+
+	o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+		ImageID:           input.ImageID,
+		ProcessingVersion: input.ProcessingVersion,
+		Success:           true,
+		Contents:          eventContents,
+		Result: &events.ProcessResult{
+			Width:  file.WidthValue(),
+			Height: file.HeightValue(),
+			Size:   file.SizeValue(),
+		},
+	})
 
 	if o.config.Env != config.EnvProduction {
 		if err := outputWorkspace.Remove(); err != nil {
@@ -124,37 +184,7 @@ func (o *JobOrchestrator) constructOutputPath(imageID string) string {
 	return filepath.Join(o.config.OutputRootPath, imageID)
 }
 
-func (o *JobOrchestrator) publishSuccessEvent(ctx context.Context, imageID string, file *model.File, outputPath string) {
-	event := events.NewImageProcessingResultEvent(imageID, true, string(o.config.WorkerType)).
-		WithSuccess(
-			outputPath,
-			file.WidthValue(),
-			file.HeightValue(),
-			file.SizeValue(),
-			file.FormatValue(),
-		)
-
-	if err := o.publishEvent(ctx, event); err != nil {
-		o.logger.Error("Failed to publish success event",
-			"imageID", imageID,
-			"error", err,
-		)
-	}
-}
-
-func (o *JobOrchestrator) publishFailureEvent(ctx context.Context, imageID string, processingErr error, retryable bool) {
-	reason := processingErr.Error()
-	event := events.NewImageProcessingResultEvent(imageID, false, string(o.config.WorkerType)).
-		WithFailure(reason, retryable)
-
-	if err := o.publishEvent(ctx, event); err != nil {
-		o.logger.Error("Failed to publish failure event",
-			"image_id", imageID,
-			"error", err)
-	}
-}
-
-func (o *JobOrchestrator) publishEvent(ctx context.Context, event *events.ImageProcessingResultEvent) error {
+func (o *JobOrchestrator) publishEvent(ctx context.Context, event *events.ImageProcessCompleteEvent) error {
 	data, err := o.eventSerializer.Serialize(event)
 	if err != nil {
 		return fmt.Errorf("failed to serialize event: %w", err)
@@ -166,4 +196,74 @@ func (o *JobOrchestrator) publishEvent(ctx context.Context, event *events.ImageP
 	}
 
 	return o.publisher.Publish(ctx, o.config.ImageProcessingTopicID, data, attributes)
+}
+
+func (o *JobOrchestrator) prepareContents(input *model.JobInput, sourceDir string, finalOutputPath string, contentProvider vobj.ContentProvider) ([]*model.Content, error) {
+	contents := make([]*model.Content, 0)
+	parent := vobj.ParentRef{
+		ID:   input.ImageID,
+		Type: vobj.ParentTypeImage,
+	}
+
+	// Helper to create content
+	addContent := func(filename string, contentType vobj.ContentType) error {
+		sourcePath := filepath.Join(sourceDir, filename)
+		info, err := os.Stat(sourcePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				o.logger.Warn("Content file not found", "path", sourcePath)
+				return fmt.Errorf("content file not found: %s", filename)
+			}
+			return fmt.Errorf("failed to stat file %s: %w", sourcePath, err)
+		}
+
+		content := &model.Content{
+			Entity: vobj.Entity{
+				ID:         uuid.New().String(),
+				Name:       filename,
+				EntityType: vobj.EntityTypeContent,
+				Parent:     parent,
+				CreatedAt:  info.ModTime(),
+				UpdatedAt:  info.ModTime(),
+			},
+			Provider:      contentProvider,
+			Path:          filepath.Join(finalOutputPath, filename),
+			ContentType:   contentType,
+			Size:          info.Size(),
+			UploadPending: false,
+		}
+		contents = append(contents, content)
+		return nil
+	}
+
+	// Add Thumbnail
+	if err := addContent("thumbnail.jpg", vobj.ContentTypeThumbnailJPEG); err != nil {
+		return nil, err
+	}
+
+	// Add DZI
+	if err := addContent("image.dzi", vobj.ContentTypeApplicationDZI); err != nil {
+		return nil, err
+	}
+
+	if input.ProcessingVersion == "v1" {
+		// Add Tiles
+		// For v1, "tiles" might be a directory or a specific file structure.
+		// Assuming "tiles" is a directory or file that represents the tiles data.
+		// Existing code referenced filepath.Join(finalOutputPath, "tiles").
+		// If it's a directory, os.Stat works.
+		if err := addContent("tiles", vobj.ContentTypeApplicationOctetStream); err != nil {
+			return nil, err
+		}
+	} else {
+		// v2: Zip and IndexMap
+		if err := addContent("image.zip", vobj.ContentTypeApplicationZip); err != nil {
+			return nil, err
+		}
+		if err := addContent("indexmap.json", vobj.ContentTypeApplicationJSON); err != nil {
+			return nil, err
+		}
+	}
+
+	return contents, nil
 }

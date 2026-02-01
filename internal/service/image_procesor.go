@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/internal/infrastructure/processors"
@@ -33,7 +34,7 @@ func NewImageProcessingService(
 	}
 }
 
-func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.File) (*model.Workspace, error) {
+func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.File, container string) (*model.Workspace, error) {
 	workspace, err := model.NewWorkspace(file)
 	if err != nil {
 		return nil, errors.NewStorageError("failed to create workspace").
@@ -58,16 +59,27 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 		return nil, err
 	}
 
-	if err := s.GenerateDZI(ctx, file, workspace); err != nil {
+	if err := s.GenerateDZI(ctx, file, workspace, container); err != nil {
 		return nil, err
 	}
-
-	if err := s.zipProcessor.BuildIndexMap(ctx, workspace.Join(file.Filename), workspace.Dir()); err != nil {
-		return nil, err
-	}
-	dzifilename := file.BaseName() + ".dzi"
-	if err := s.zipProcessor.ExtractDesiredFile(ctx, workspace.Join(file.Filename), dzifilename, workspace.Join(dzifilename)); err != nil {
-		return nil, err
+	if container == "zip" {
+		if err := s.zipProcessor.BuildIndexMap(ctx, workspace.Join("image.zip"), workspace.Dir()); err != nil {
+			return nil, err
+		}
+		// Extract image.dzi from zip so it can be uploaded as a separate file
+		if err := s.zipProcessor.ExtractDesiredFile(ctx, workspace.Join("image.zip"), "image.dzi", workspace.Join("image.dzi")); err != nil {
+			return nil, err
+		}
+	} else {
+		// container == "fs"
+		// vips generates "image_files", rename it to "tiles" as expected by JobOrchestrator
+		oldPath := workspace.Join("image_files")
+		newPath := workspace.Join("tiles")
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return nil, errors.WrapStorageError(err, "failed to rename tiles directory").
+				WithContext("old", oldPath).
+				WithContext("new", newPath)
+		}
 	}
 
 	s.logger.Info("File processing workflow completed successfully",
@@ -186,7 +198,7 @@ func (s *ImageProcessingService) GenerateThumbnail(ctx context.Context, file *mo
 	return nil
 }
 
-func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.File, workspace *model.Workspace) error {
+func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.File, workspace *model.Workspace, container string) error {
 	s.logger.Info("Generating DZI",
 		"fileID", file.ID,
 		"filename", file.Filename)
@@ -202,11 +214,18 @@ func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.Fi
 
 	outputBase := workspace.Join("image")
 
+	dziConfig := s.config.DZIConfig
+	if container == "zip" && dziConfig.Compression > 9 {
+		s.logger.Warn("DZI compression level out of range for zip container, clamping to 0",
+			"compression", dziConfig.Compression)
+		dziConfig.Compression = 0
+	}
+
 	result, err := s.vipsProcessor.CreateDZI(ctx,
 		inputFilePath,
 		outputBase,
 		s.config.ImageProcessTimeoutMinute.DZIConversion,
-		s.config.DZIConfig)
+		dziConfig, container)
 
 	if err != nil {
 		stdout := ""
@@ -221,6 +240,17 @@ func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.Fi
 			"stderr", stderr,
 			"error", err)
 		return err
+	}
+
+	// Rename output to .zip if container is "zip" and vips didn't append usage extension
+	if container == "zip" {
+		expectedZipPath := outputBase + ".zip"
+		// Check if file exists as outputBase (without extension)
+		if _, err := os.Stat(outputBase); err == nil {
+			if err := os.Rename(outputBase, expectedZipPath); err != nil {
+				return errors.WrapStorageError(err, "failed to rename DZI zip file")
+			}
+		}
 	}
 
 	s.logger.Info("DZI generation succeeded",
