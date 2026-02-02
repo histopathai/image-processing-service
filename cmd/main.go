@@ -93,6 +93,7 @@ func getJobInput() (*model.JobInput, error) {
 	imageID := os.Getenv("INPUT_IMAGE_ID")
 	originPath := os.Getenv("INPUT_ORIGIN_PATH")
 	processingVersion := os.Getenv("INPUT_PROCESSING_VERSION")
+	bucketName := os.Getenv("INPUT_BUCKET_NAME")
 
-	return model.NewJobInputFromEnv(imageID, originPath, processingVersion)
+	return model.NewJobInputFromEnv(imageID, originPath, processingVersion, bucketName)
 }

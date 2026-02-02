@@ -169,7 +169,7 @@ func (o *JobOrchestrator) constructInputPath(input *model.JobInput) string {
 	if o.config.Env == config.EnvLocal {
 		return input.OriginPath
 	}
-	return filepath.Join(o.config.OutputRootPath, input.OriginPath)
+	return filepath.Join("/gcs/"+o.config.GCP.InputBucketName, input.OriginPath)
 }
 
 func (o *JobOrchestrator) constructOutputPath(imageID string) string {
