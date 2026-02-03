@@ -112,7 +112,8 @@ func (p *VipsProcessor) CreateDZI(ctx context.Context, inputFilePath, outputBase
 
 	// Verify DZI output
 	if container == "zip" {
-		zipFile := outputBase
+		// vips dzsave with --container zip automatically appends .zip extension
+		zipFile := outputBase + ".zip"
 		if err := p.verifyOutputFile(zipFile); err != nil {
 			return result, errors.WrapProcessingError(err, "failed to verify DZI zip file").
 				WithContext("zip_file", zipFile)

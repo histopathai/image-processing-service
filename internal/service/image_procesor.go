@@ -242,20 +242,10 @@ func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.Fi
 		return err
 	}
 
-	// Rename output to .zip if container is "zip" and vips didn't append usage extension
-	if container == "zip" {
-		expectedZipPath := outputBase + ".zip"
-		// Check if file exists as outputBase (without extension)
-		if _, err := os.Stat(outputBase); err == nil {
-			if err := os.Rename(outputBase, expectedZipPath); err != nil {
-				return errors.WrapStorageError(err, "failed to rename DZI zip file")
-			}
-		}
-	}
-
 	s.logger.Info("DZI generation succeeded",
 		"fileID", file.ID,
 		"outputBase", outputBase)
 
 	return nil
+
 }
