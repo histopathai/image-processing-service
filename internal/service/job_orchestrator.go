@@ -263,7 +263,7 @@ func (o *JobOrchestrator) prepareContents(input *model.JobInput, sourceDir strin
 		if err := addContent("image.zip", vobj.ContentTypeApplicationZip); err != nil {
 			return nil, err
 		}
-		if err := addContent("indexmap.json", vobj.ContentTypeApplicationJSON); err != nil {
+		if err := addContent("IndexMap.json", vobj.ContentTypeApplicationJSON); err != nil {
 			return nil, err
 		}
 	}
