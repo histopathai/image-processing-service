@@ -7,6 +7,7 @@ import (
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/internal/infrastructure/processors"
+	"github.com/histopathai/image-processing-service/internal/infrastructure/storage"
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/errors"
 )
@@ -17,12 +18,16 @@ type ImageProcessingService struct {
 	vipsProcessor     *processors.VipsProcessor
 	fileInfoProcessor *processors.ImageInfoProcessor
 	zipProcessor      *processors.ZipProcessor
+	inputStorage      storage.InputStorage
+	outputStorage     storage.OutputStorage
 	config            *config.Config
 }
 
 func NewImageProcessingService(
 	logger *slog.Logger,
 	cfg *config.Config,
+	inputStorage storage.InputStorage,
+	outputStorage storage.OutputStorage,
 ) *ImageProcessingService {
 	return &ImageProcessingService{
 		logger:            logger,
@@ -30,17 +35,43 @@ func NewImageProcessingService(
 		vipsProcessor:     processors.NewVipsProcessor(logger),
 		fileInfoProcessor: processors.NewImageInfoProcessor(logger),
 		zipProcessor:      processors.NewZipProcessor(logger),
+		inputStorage:      inputStorage,
+		outputStorage:     outputStorage,
 		config:            cfg,
 	}
 }
 
 func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.File, container string) (*model.Workspace, error) {
+	// Create workspace in /tmp (ephemeral, instance-local storage)
 	workspace, err := model.NewWorkspace(file)
 	if err != nil {
 		return nil, errors.NewStorageError("failed to create workspace").
 			WithContext("fileID", file.ID)
 	}
 
+	s.logger.Info("Created workspace in /tmp",
+		"fileID", file.ID,
+		"workspace", workspace.Dir())
+
+	// Step 1: Copy input file from storage to /tmp workspace
+	inputPath := file.Filename // Relative path in input storage
+	localInputPath := workspace.Join(file.Filename)
+
+	s.logger.Info("Copying input file to workspace",
+		"fileID", file.ID,
+		"input_path", inputPath,
+		"local_path", localInputPath)
+
+	if err := s.inputStorage.CopyToLocal(ctx, inputPath, localInputPath); err != nil {
+		return nil, errors.WrapStorageError(err, "failed to copy input file to workspace").
+			WithContext("fileID", file.ID).
+			WithContext("input_path", inputPath)
+	}
+
+	// Update file to point to local copy in /tmp
+	file.SetDir(workspace.Dir())
+
+	// Step 2: Process file in /tmp workspace
 	wasDNGFile := s.isDNGFile(file)
 	tiffFilename := ""
 
@@ -62,17 +93,21 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 	if err := s.GenerateDZI(ctx, file, workspace, container); err != nil {
 		return nil, err
 	}
+
+	// Step 3: Post-process based on container type
 	if container == "zip" {
+		// Build index map for zip container
 		if err := s.zipProcessor.BuildIndexMap(ctx, workspace.Join("image.zip"), workspace.Dir()); err != nil {
 			return nil, err
 		}
+
 		// Extract image.dzi from zip so it can be uploaded as a separate file
 		if err := s.zipProcessor.ExtractDesiredFile(ctx, workspace.Join("image.zip"), "image.dzi", workspace.Join("image.dzi")); err != nil {
 			return nil, err
 		}
 	} else {
 		// container == "fs"
-		// vips generates "image_files", rename it to "tiles" as expected by JobOrchestrator
+		// vips generates "image_files", rename it to "tiles" as expected by output validation
 		oldPath := workspace.Join("image_files")
 		newPath := workspace.Join("tiles")
 		if err := os.Rename(oldPath, newPath); err != nil {
@@ -82,9 +117,20 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 		}
 	}
 
+	// Step 4: Validate outputs before copying to storage
+	if err := s.validateOutputs(workspace, container); err != nil {
+		return nil, err
+	}
+
 	s.logger.Info("File processing workflow completed successfully",
 		"fileID", file.ID)
 
+	// Step 5: Copy outputs to destination storage
+	if err := s.copyOutputsToStorage(ctx, workspace, file.ID, container); err != nil {
+		return nil, err
+	}
+
+	// Cleanup: Remove converted TIFF file if it was created
 	if wasDNGFile && tiffFilename != "" {
 		tiffPath := workspace.Join(tiffFilename)
 		if err := workspace.RemoveFile(tiffPath); err != nil {
@@ -98,6 +144,7 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 				"tiffPath", tiffPath)
 		}
 	}
+
 	return workspace, nil
 }
 

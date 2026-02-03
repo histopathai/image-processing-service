@@ -62,11 +62,17 @@ type ThumbnailConfig struct {
 	Quality int
 }
 
+type StorageConfig struct {
+	InputMountPath  string // Mount path for input files (e.g., /input, /gcs/bucket-original, ./test-data/input)
+	OutputMountPath string // Mount path for output files (e.g., /output, /gcs/bucket-processed, ./test-data/output)
+}
+
 type Config struct {
 	Env                       Environment
 	WorkerType                WorkerType
 	GCP                       GCPConfig
-	OutputRootPath            string
+	Storage                   StorageConfig
+	OutputRootPath            string // Deprecated: use Storage.OutputMountPath
 	Logging                   LoggingConfig
 	DZIConfig                 DZIConfig
 	ThumbnailConfig           ThumbnailConfig
@@ -202,17 +208,29 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 	loggingConfig := LoadLoggingConfig()
 	var outputRootPath string
 	var gcpConfig GCPConfig
+	var storageConfig StorageConfig
+
 	if env == EnvLocal {
 		outputRootPath = getEnv("OUTPUT_ROOT_PATH", "./output")
+		storageConfig = StorageConfig{
+			InputMountPath:  getEnv("INPUT_MOUNT_PATH", "./test-data/input"),
+			OutputMountPath: getEnv("OUTPUT_MOUNT_PATH", "./test-data/output"),
+		}
 		gcpConfig = GCPConfig{}
 	} else {
 		outputRootPath = ""
+		// In cloud, use /input and /output mount points (GCS FUSE)
+		storageConfig = StorageConfig{
+			InputMountPath:  getEnv("INPUT_MOUNT_PATH", "/input"),
+			OutputMountPath: getEnv("OUTPUT_MOUNT_PATH", "/output"),
+		}
 		gcpConfig = LoadGCPConfig()
 	}
 
 	config := &Config{
 		Env:                       env,
 		WorkerType:                workerType,
+		Storage:                   storageConfig,
 		OutputRootPath:            outputRootPath,
 		GCP:                       gcpConfig,
 		Logging:                   loggingConfig,

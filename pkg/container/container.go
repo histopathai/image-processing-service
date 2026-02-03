@@ -67,7 +67,11 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*Contain
 
 	eventSerializer = events.NewJSONEventSerializer()
 
-	imageProcessor = service.NewImageProcessingService(logger, cfg)
+	// Create storage instances based on configuration
+	inputStorage := InfraStorage.NewMountStorage(cfg.Storage.InputMountPath, logger)
+	outputMountStorage := InfraStorage.NewMountStorage(cfg.Storage.OutputMountPath, logger)
+
+	imageProcessor = service.NewImageProcessingService(logger, cfg, inputStorage, outputMountStorage)
 
 	jobOrchestrator = service.NewJobOrchestrator(
 		logger,
