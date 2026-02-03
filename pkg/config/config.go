@@ -200,7 +200,9 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	env := Environment(getEnv("APP_ENV", "LOCAL"))
 	workerType := WorkerType(getEnv("WORKER_TYPE", "medium"))
-	imageProcessingTopicID := getEnv("IMAGE_PROCESSING_TOPIC_ID", "image-processing-tasks")
+
+	// Terraform IMAGE_PROCESS_RESULT_TOPIC_ID env var ile uyumlu
+	imageProcessingTopicID := getEnv("IMAGE_PROCESS_RESULT_TOPIC_ID", "image-processing-results")
 
 	dziConfig := LoadDZIConfig()
 	thumbnailConfig := LoadThumbnailConfig()

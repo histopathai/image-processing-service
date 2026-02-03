@@ -111,23 +111,40 @@ func (z *ZipProcessor) ExtractDesiredFile(
 	defer r.Close()
 
 	var file *zip.File
+	var allNames []string
+
+	// Pass 1: exact match
 	for _, f := range r.File {
+		allNames = append(allNames, f.Name)
 		if f.Name == targetFile {
 			file = f
 			break
 		}
 	}
 
+	// Pass 2: fallback — filepath.Base match
+	// vips dzsave --container zip bazen dosyaları alt dizinle koyabilir
+	// örn. "image/image.dzi" veya "./image.dzi"
+	if file == nil {
+		for _, f := range r.File {
+			if filepath.Base(f.Name) == targetFile {
+				file = f
+				break
+			}
+		}
+	}
+
 	if file == nil {
 		return errors.NewNotFoundError("file not found in zip").
 			WithContext("file", targetFile).
-			WithContext("zip", zipPath)
+			WithContext("zip", zipPath).
+			WithContext("available_files", allNames) // debug için zip'in içini göster
 	}
 
 	rc, err := file.Open()
 	if err != nil {
 		return errors.WrapStorageError(err, "failed to open target file in zip").
-			WithContext("file", targetFile)
+			WithContext("file", file.Name)
 	}
 	defer rc.Close()
 
