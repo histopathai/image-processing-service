@@ -112,8 +112,36 @@ func (p *VipsProcessor) CreateDZI(ctx context.Context, inputFilePath, outputBase
 
 	// Verify DZI output
 	if container == "zip" {
-		// vips dzsave with --container zip automatically appends .zip extension
+		// vips dzsave with --container zip behavior varies:
+		// - Sometimes creates outputBase.zip
+		// - Sometimes creates outputBase (without extension)
+		// Check both and rename if needed for consistency
+
 		zipFile := outputBase + ".zip"
+		baseFile := outputBase
+
+		// Check if .zip file exists
+		if _, err := os.Stat(zipFile); err == nil {
+			// File exists with .zip extension, all good
+			p.logger.Debug("DZI zip file found", "path", zipFile)
+		} else if _, err := os.Stat(baseFile); err == nil {
+			// File exists without .zip extension, rename it
+			p.logger.Info("DZI zip file created without .zip extension, renaming",
+				"from", baseFile,
+				"to", zipFile)
+			if err := os.Rename(baseFile, zipFile); err != nil {
+				return result, errors.WrapStorageError(err, "failed to rename DZI zip file").
+					WithContext("from", baseFile).
+					WithContext("to", zipFile)
+			}
+		} else {
+			// Neither exists, error
+			return result, errors.NewProcessingError("DZI zip file was not created").
+				WithContext("expected_zip", zipFile).
+				WithContext("expected_base", baseFile)
+		}
+
+		// Final verification that .zip file exists and is not empty
 		if err := p.verifyOutputFile(zipFile); err != nil {
 			return result, errors.WrapProcessingError(err, "failed to verify DZI zip file").
 				WithContext("zip_file", zipFile)

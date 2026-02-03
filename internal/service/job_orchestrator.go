@@ -49,12 +49,14 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		"originPath", input.OriginPath,
 	)
 
-	inputPath := o.constructInputPath(input)
+	// OriginPath is relative to the input storage mount point
+	// e.g., "image-id/file.png" or just "file.png"
+	// The storage layer handles the actual mount point (/input, /gcs/bucket, etc.)
 
 	file, err := model.NewFile(
 		input.ImageID,
-		filepath.Base(inputPath),
-		filepath.Dir(inputPath),
+		input.OriginPath, // Use OriginPath directly as filename (relative path in storage)
+		"",               // Dir will be set by ImageProcessingService after copying to /tmp
 		nil, nil, nil, nil,
 	)
 	if err != nil {
@@ -67,6 +69,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		})
 		return err
 	}
+
 	var container string
 	if input.ProcessingVersion == "v1" {
 		container = "fs"
