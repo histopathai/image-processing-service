@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -203,6 +204,10 @@ func LoadConfig(logger *slog.Logger) (*Config, error) {
 
 	// Terraform IMAGE_PROCESS_RESULT_TOPIC_ID env var ile uyumlu
 	imageProcessingTopicID := getEnv("IMAGE_PROCESS_RESULT_TOPIC_ID", "image-processing-results")
+
+	if env != EnvProduction {
+		imageProcessingTopicID = fmt.Sprintf("dev-%s", imageProcessingTopicID)
+	}
 
 	dziConfig := LoadDZIConfig()
 	thumbnailConfig := LoadThumbnailConfig()
