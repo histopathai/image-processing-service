@@ -48,7 +48,12 @@ locals {
   original_bucket_name  = data.terraform_remote_state.platform.outputs.original_bucket_name
   processed_bucket_name = data.terraform_remote_state.platform.outputs.processed_bucket_name
 
-  processing_completed_topic = data.terraform_remote_state.main-service.outputs.processing_completed_topic
+  # Environment-based prefix for PubSub resources
+  # In dev environment, all topics get "dev-" prefix for isolation
+  pubsub_prefix = var.environment == "prod" ? "" : "dev-"
+
+  # Construct the topic name with the appropriate prefix
+  processing_completed_topic = "${local.pubsub_prefix}image-processing-results"
 
   input_mount_path  = "/gcs/${local.original_bucket_name}"
   output_mount_path = "/gcs/${local.processed_bucket_name}"
