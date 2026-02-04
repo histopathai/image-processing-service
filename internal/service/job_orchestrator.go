@@ -52,6 +52,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	// OriginPath is relative to the input storage mount point
 	// e.g., "image-id/file.png" or just "file.png"
 	// The storage layer handles the actual mount point (/input, /gcs/bucket, etc.)
+	baseEvent := events.NewBaseEvent(events.ImageProcessCompleteEventType)
 
 	file, err := model.NewFile(
 		input.ImageID,
@@ -61,6 +62,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	)
 	if err != nil {
 		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			BaseEvent:         baseEvent,
 			ImageID:           input.ImageID,
 			ProcessingVersion: input.ProcessingVersion,
 			Success:           false,
@@ -80,6 +82,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	outputWorkspace, err := o.imageProcessingService.ProcessFile(ctx, file, container)
 	if err != nil {
 		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			BaseEvent:         baseEvent,
 			ImageID:           input.ImageID,
 			ProcessingVersion: input.ProcessingVersion,
 			Success:           false,
@@ -99,8 +102,6 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	} else {
 		contentProvider = vobj.ContentProviderGCS
 	}
-
-	baseEvent := events.NewBaseEvent(events.ImageProcessCompleteEventType)
 
 	contents, err := o.prepareContents(input, outputWorkspace.Dir(), finalOutputPath, contentProvider)
 	if err != nil {
