@@ -100,9 +100,12 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		contentProvider = vobj.ContentProviderGCS
 	}
 
+	baseEvent := events.NewBaseEvent(events.ImageProcessCompleteEventType)
+
 	contents, err := o.prepareContents(input, outputWorkspace.Dir(), finalOutputPath, contentProvider)
 	if err != nil {
 		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			BaseEvent:         baseEvent,
 			ImageID:           input.ImageID,
 			ProcessingVersion: input.ProcessingVersion,
 			Success:           false,
@@ -120,6 +123,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 
 	if err := o.storage.UploadDirectory(ctx, outputWorkspace.Dir(), finalOutputPath); err != nil {
 		o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+			BaseEvent:         baseEvent,
 			ImageID:           input.ImageID,
 			ProcessingVersion: input.ProcessingVersion,
 			Success:           false,
@@ -140,6 +144,7 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 	}
 
 	o.publishEvent(ctx, &events.ImageProcessCompleteEvent{
+		BaseEvent:         baseEvent,
 		ImageID:           input.ImageID,
 		ProcessingVersion: input.ProcessingVersion,
 		Success:           true,

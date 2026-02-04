@@ -3,7 +3,7 @@ package events
 import "github.com/histopathai/image-processing-service/internal/domain/model"
 
 const (
-	EventTypeImageProcessingResult EventType = "image.processing.completed.v1"
+	ImageProcessCompleteEventType EventType = "image.process.complete.v1"
 )
 
 type ProcessResult struct {
