@@ -16,8 +16,8 @@ func (p ParentType) String() string {
 }
 
 type ParentRef struct {
-	ID   string
-	Type ParentType
+	ID   string     `json:"id"`
+	Type ParentType `json:"type"`
 }
 
 func (p *ParentRef) IsValid() bool {

@@ -9,9 +9,9 @@ import (
 type EventType string
 
 type BaseEvent struct {
-	EventID   string
-	EventType EventType
-	Timestamp time.Time
+	EventID   string    `json:"event_id"`
+	EventType EventType `json:"event_type"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 func NewBaseEvent(eventType EventType) BaseEvent {

@@ -7,14 +7,14 @@ import (
 type EntityType string
 
 type Entity struct {
-	ID         string
-	EntityType EntityType
-	Name       string
-	CreatorID  string
-	Parent     ParentRef
-	Deleted    bool
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID         string     `json:"id"`
+	EntityType EntityType `json:"entity_type"`
+	Name       string     `json:"name"`
+	CreatorID  string     `json:"creator_id"`
+	Parent     ParentRef  `json:"parent"`
+	Deleted    bool       `json:"deleted"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 func (e EntityType) IsValid() bool {
