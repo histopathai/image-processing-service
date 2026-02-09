@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/internal/infrastructure/processors"
@@ -53,23 +54,22 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 		"fileID", file.ID,
 		"workspace", workspace.Dir())
 
-	// Step 1: Copy input file from storage to /tmp workspace
-	inputPath := file.Filename // Relative path in input storage
-	localInputPath := workspace.Join(file.Filename)
+	// Step 1: Use original file directly from its location (no copying needed)
+	// For local development, inputPath is already an absolute path
+	// For cloud, it would be a path within the mounted GCS bucket
+	originalFilePath := file.Filename
 
-	s.logger.Info("Copying input file to workspace",
+	s.logger.Info("Using original file directly",
 		"fileID", file.ID,
-		"input_path", inputPath,
-		"local_path", localInputPath)
+		"original_path", originalFilePath)
 
-	if err := s.inputStorage.CopyToLocal(ctx, inputPath, localInputPath); err != nil {
-		return nil, errors.WrapStorageError(err, "failed to copy input file to workspace").
-			WithContext("fileID", file.ID).
-			WithContext("input_path", inputPath)
-	}
+	// Update file to point to the original file location
+	// Extract directory and filename from the original path
+	originalDir := filepath.Dir(originalFilePath)
+	originalFilename := filepath.Base(originalFilePath)
 
-	// Update file to point to local copy in /tmp
-	file.SetDir(workspace.Dir())
+	file.SetDir(originalDir)
+	file.SetFilename(originalFilename)
 
 	// Step 2: Process file in /tmp workspace
 	wasDNGFile := s.isDNGFile(file)

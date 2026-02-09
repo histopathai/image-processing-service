@@ -47,7 +47,23 @@ func (m *MountStorage) GetReader(ctx context.Context, path string) (io.ReadClose
 
 // CopyToLocal implements InputStorage.CopyToLocal
 func (m *MountStorage) CopyToLocal(ctx context.Context, remotePath, localPath string) error {
-	fullRemotePath := filepath.Join(m.basePath, remotePath)
+	// Handle absolute paths by using them directly as the source
+	// This is common in local development where INPUT_ORIGIN_PATH is an absolute path
+	var fullRemotePath string
+	if filepath.IsAbs(remotePath) {
+		// Use the absolute path directly
+		fullRemotePath = remotePath
+		m.logger.Debug("Using absolute path directly",
+			"remote_path", remotePath,
+			"full_remote_path", fullRemotePath)
+	} else {
+		// Join with basePath for relative paths
+		fullRemotePath = filepath.Join(m.basePath, remotePath)
+		m.logger.Debug("Joining with basePath",
+			"remote_path", remotePath,
+			"basePath", m.basePath,
+			"full_remote_path", fullRemotePath)
+	}
 
 	m.logger.Debug("Copying file from mount to local",
 		"remote_path", remotePath,
