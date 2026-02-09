@@ -54,17 +54,28 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 		"fileID", file.ID,
 		"workspace", workspace.Dir())
 
-	// Step 1: Use original file directly from its location (no copying needed)
-	// For local development, inputPath is already an absolute path
-	// For cloud, it would be a path within the mounted GCS bucket
-	originalFilePath := file.Filename
-
-	s.logger.Info("Using original file directly",
-		"fileID", file.ID,
-		"original_path", originalFilePath)
+	// Step 1: Determine the full path to the original file
+	// For local: file.Filename is already an absolute path (e.g., /Users/yasin/.../test.png)
+	// For cloud: file.Filename is relative (e.g., "image-id-file.dng"), need to join with mount path
+	var originalFilePath string
+	if filepath.IsAbs(file.Filename) {
+		// Local development: use absolute path directly
+		originalFilePath = file.Filename
+		s.logger.Info("Using absolute path directly (local)",
+			"fileID", file.ID,
+			"original_path", originalFilePath)
+	} else {
+		// Cloud: join with input mount path
+		// inputStorage is MountStorage with basePath set to input mount (e.g., "/input")
+		originalFilePath = filepath.Join(s.config.Storage.InputMountPath, file.Filename)
+		s.logger.Info("Joining with input mount path (cloud)",
+			"fileID", file.ID,
+			"relative_path", file.Filename,
+			"mount_path", s.config.Storage.InputMountPath,
+			"original_path", originalFilePath)
+	}
 
 	// Update file to point to the original file location
-	// Extract directory and filename from the original path
 	originalDir := filepath.Dir(originalFilePath)
 	originalFilename := filepath.Base(originalFilePath)
 
