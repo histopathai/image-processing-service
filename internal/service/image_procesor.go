@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/internal/infrastructure/processors"
+	"github.com/histopathai/image-processing-service/internal/infrastructure/storage"
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/errors"
 )
@@ -15,29 +18,71 @@ type ImageProcessingService struct {
 	dcrawProcessor    *processors.DcrawProcessor
 	vipsProcessor     *processors.VipsProcessor
 	fileInfoProcessor *processors.ImageInfoProcessor
+	zipProcessor      *processors.ZipProcessor
+	inputStorage      storage.InputStorage
+	outputStorage     storage.OutputStorage
 	config            *config.Config
 }
 
 func NewImageProcessingService(
 	logger *slog.Logger,
 	cfg *config.Config,
+	inputStorage storage.InputStorage,
+	outputStorage storage.OutputStorage,
 ) *ImageProcessingService {
 	return &ImageProcessingService{
 		logger:            logger,
 		dcrawProcessor:    processors.NewDcrawProcessor(logger),
 		vipsProcessor:     processors.NewVipsProcessor(logger),
 		fileInfoProcessor: processors.NewImageInfoProcessor(logger),
+		zipProcessor:      processors.NewZipProcessor(logger),
+		inputStorage:      inputStorage,
+		outputStorage:     outputStorage,
 		config:            cfg,
 	}
 }
 
-func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.File) (*model.Workspace, error) {
+func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.File, container string) (*model.Workspace, error) {
+	// Create workspace in /tmp (ephemeral, instance-local storage)
 	workspace, err := model.NewWorkspace(file)
 	if err != nil {
 		return nil, errors.NewStorageError("failed to create workspace").
 			WithContext("fileID", file.ID)
 	}
 
+	s.logger.Info("Created workspace in /tmp",
+		"fileID", file.ID,
+		"workspace", workspace.Dir())
+
+	// Step 1: Determine the full path to the original file
+	// For local: file.Filename is already an absolute path (e.g., /Users/yasin/.../test.png)
+	// For cloud: file.Filename is relative (e.g., "image-id-file.dng"), need to join with mount path
+	var originalFilePath string
+	if filepath.IsAbs(file.Filename) {
+		// Local development: use absolute path directly
+		originalFilePath = file.Filename
+		s.logger.Info("Using absolute path directly (local)",
+			"fileID", file.ID,
+			"original_path", originalFilePath)
+	} else {
+		// Cloud: join with input mount path
+		// inputStorage is MountStorage with basePath set to input mount (e.g., "/input")
+		originalFilePath = filepath.Join(s.config.Storage.InputMountPath, file.Filename)
+		s.logger.Info("Joining with input mount path (cloud)",
+			"fileID", file.ID,
+			"relative_path", file.Filename,
+			"mount_path", s.config.Storage.InputMountPath,
+			"original_path", originalFilePath)
+	}
+
+	// Update file to point to the original file location
+	originalDir := filepath.Dir(originalFilePath)
+	originalFilename := filepath.Base(originalFilePath)
+
+	file.SetDir(originalDir)
+	file.SetFilename(originalFilename)
+
+	// Step 2: Process file in /tmp workspace
 	wasDNGFile := s.isDNGFile(file)
 	tiffFilename := ""
 
@@ -56,13 +101,47 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 		return nil, err
 	}
 
-	if err := s.GenerateDZI(ctx, file, workspace); err != nil {
+	if err := s.GenerateDZI(ctx, file, workspace, container); err != nil {
+		return nil, err
+	}
+
+	// Step 3: Post-process based on container type
+	if container == "zip" {
+		// Build index map for zip container
+		if err := s.zipProcessor.BuildIndexMap(ctx, workspace.Join("image.zip"), workspace.Dir()); err != nil {
+			return nil, err
+		}
+
+		// Extract image.dzi from zip so it can be uploaded as a separate file
+		if err := s.zipProcessor.ExtractDesiredFile(ctx, workspace.Join("image.zip"), "image.dzi", workspace.Join("image.dzi")); err != nil {
+			return nil, err
+		}
+	} else {
+		// container == "fs"
+		// vips generates "image_files", rename it to "tiles" as expected by output validation
+		oldPath := workspace.Join("image_files")
+		newPath := workspace.Join("tiles")
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return nil, errors.WrapStorageError(err, "failed to rename tiles directory").
+				WithContext("old", oldPath).
+				WithContext("new", newPath)
+		}
+	}
+
+	// Step 4: Validate outputs before copying to storage
+	if err := s.validateOutputs(workspace, container); err != nil {
 		return nil, err
 	}
 
 	s.logger.Info("File processing workflow completed successfully",
 		"fileID", file.ID)
 
+	// Step 5: Copy outputs to destination storage
+	if err := s.copyOutputsToStorage(ctx, workspace, file.ID, container); err != nil {
+		return nil, err
+	}
+
+	// Cleanup: Remove converted TIFF file if it was created
 	if wasDNGFile && tiffFilename != "" {
 		tiffPath := workspace.Join(tiffFilename)
 		if err := workspace.RemoveFile(tiffPath); err != nil {
@@ -76,6 +155,7 @@ func (s *ImageProcessingService) ProcessFile(ctx context.Context, file *model.Fi
 				"tiffPath", tiffPath)
 		}
 	}
+
 	return workspace, nil
 }
 
@@ -176,7 +256,7 @@ func (s *ImageProcessingService) GenerateThumbnail(ctx context.Context, file *mo
 	return nil
 }
 
-func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.File, workspace *model.Workspace) error {
+func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.File, workspace *model.Workspace, container string) error {
 	s.logger.Info("Generating DZI",
 		"fileID", file.ID,
 		"filename", file.Filename)
@@ -192,11 +272,18 @@ func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.Fi
 
 	outputBase := workspace.Join("image")
 
+	dziConfig := s.config.DZIConfig
+	if container == "zip" && dziConfig.Compression > 9 {
+		s.logger.Warn("DZI compression level out of range for zip container, clamping to 0",
+			"compression", dziConfig.Compression)
+		dziConfig.Compression = 0
+	}
+
 	result, err := s.vipsProcessor.CreateDZI(ctx,
 		inputFilePath,
 		outputBase,
 		s.config.ImageProcessTimeoutMinute.DZIConversion,
-		s.config.DZIConfig)
+		dziConfig, container)
 
 	if err != nil {
 		stdout := ""
@@ -218,4 +305,5 @@ func (s *ImageProcessingService) GenerateDZI(ctx context.Context, file *model.Fi
 		"outputBase", outputBase)
 
 	return nil
+
 }

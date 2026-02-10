@@ -69,3 +69,5 @@ docs/docs.go
 */.gac.json
 
 logs/
+
+**/test-data

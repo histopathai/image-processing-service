@@ -23,15 +23,15 @@ func NewFile(id, filename, dir string, width, height *int, size *int64, format *
 		return nil, fmt.Errorf("filename cannot be empty")
 	}
 
-	if strings.TrimSpace(dir) == "" {
-		return nil, fmt.Errorf("directory cannot be empty")
-	}
-
-	if _, err := os.Stat(dir); err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("directory does not exist: %s", dir)
+	// Dir can be empty initially - it will be set after copying to /tmp workspace
+	// Only validate if dir is provided
+	if dir != "" {
+		if _, err := os.Stat(dir); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("directory does not exist: %s", dir)
+			}
+			return nil, fmt.Errorf("failed to access directory: %w", err)
 		}
-		return nil, fmt.Errorf("failed to access directory: %w", err)
 	}
 
 	return &File{

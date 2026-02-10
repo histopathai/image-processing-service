@@ -9,7 +9,6 @@ import (
 
 	"github.com/histopathai/image-processing-service/internal/domain/model"
 	"github.com/histopathai/image-processing-service/internal/domain/utils"
-	"github.com/histopathai/image-processing-service/internal/service"
 	"github.com/histopathai/image-processing-service/pkg/config"
 	"github.com/histopathai/image-processing-service/pkg/container"
 	"github.com/histopathai/image-processing-service/pkg/logger"
@@ -68,7 +67,6 @@ func run(ctx context.Context) error {
 	log.Info("Job input loaded",
 		"image_id", input.ImageID,
 		"origin_path", input.OriginPath,
-		"bucket_name", input.BucketName,
 	)
 
 	// Initialize container
@@ -82,18 +80,8 @@ func run(ctx context.Context) error {
 		}
 	}()
 
-	// Create job orchestrator
-	orchestrator := service.NewJobOrchestrator(
-		log,
-		cfg,
-		cnt.ImageProcessingService,
-		cnt.StorageService,
-		cnt.Publisher,
-		cnt.EventSerializer,
-	)
-
 	// Process the image
-	if err := orchestrator.ProcessJob(ctx, input); err != nil {
+	if err := cnt.JobOrchestrator.ProcessJob(ctx, input); err != nil {
 		return fmt.Errorf("image processing failed: %w", err)
 	}
 
@@ -104,7 +92,8 @@ func run(ctx context.Context) error {
 func getJobInput() (*model.JobInput, error) {
 	imageID := os.Getenv("INPUT_IMAGE_ID")
 	originPath := os.Getenv("INPUT_ORIGIN_PATH")
+	processingVersion := os.Getenv("INPUT_PROCESSING_VERSION")
 	bucketName := os.Getenv("INPUT_BUCKET_NAME")
 
-	return model.NewJobInputFromEnv(imageID, originPath, bucketName)
+	return model.NewJobInputFromEnv(imageID, originPath, processingVersion, bucketName)
 }
