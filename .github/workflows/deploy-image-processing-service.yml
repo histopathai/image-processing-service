@@ -193,6 +193,7 @@ jobs:
           ./cleanup_state.sh "${{ needs.setup.outputs.environment }}"
         env:
           TF_STATE_BUCKET: ${{ env.TF_STATE_BUCKET }}
+          GCP_REGION: ${{ env.GCP_REGION }}
 
       - name: Terraform Plan
         run: |
