@@ -7,17 +7,17 @@ set -euo pipefail
 ENVIRONMENT="${1:-prod}"
 echo "🔍 Checking Terraform state for environment: ${ENVIRONMENT}"
 
-# Get project and region from Terraform state
-PROJECT_ID=$(terraform output -raw -state=<(terraform show -json | jq -r '.values.root_module.resources[0].values.project // empty') 2>/dev/null || gcloud config get-value project)
-REGION=$(gcloud config get-value compute/region 2>/dev/null || echo "")
+# Get project from gcloud (set by auth step) and region from env var
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+REGION="${GCP_REGION:-}"
 
-# Try to get region from terraform state or gcloud
-if [ -z "$REGION" ]; then
-  REGION=$(terraform show -json 2>/dev/null | jq -r '.values.root_module.resources[0].values.location // empty' 2>/dev/null || echo "")
+if [ -z "$PROJECT_ID" ]; then
+  echo "❌ Could not determine project. Ensure GCP auth is configured."
+  exit 1
 fi
 
 if [ -z "$REGION" ]; then
-  echo "❌ Could not determine region. Please set compute/region in gcloud config."
+  echo "❌ GCP_REGION environment variable is not set."
   exit 1
 fi
 
