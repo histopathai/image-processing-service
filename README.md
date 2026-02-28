@@ -1,23 +1,21 @@
 # 🧠 Image Processing Service
 
-This is a Go-based microservice for processing medical whole slide images (WSIs). It supports tasks such as:
+A Go-based microservice for processing medical whole slide images (WSIs). It supports tasks such as:
 
 - Generating thumbnails
 - Creating Deep Zoom Images (DZI)
 - Extracting metadata (dimensions, format, file size)
 
-Supported image formats include `.svs`, `.tif`, `.tiff`, `.jpg`, `.jpeg`, `.png`, `.ndpi`, `.scn`, `.bif`, `.vms`, `.vmu`, and `.bmp`.
-
-The service runs as a Cloud Run service and processes images triggered by Pub/Sub push subscriptions.
+Supported image formats include `.svs`, `.tif`, `.tiff`, `.jpg`, `.jpeg`, `.png`, `.ndpi`, `.scn`, `.bif`, `.vms`, `.vmu`, `.bmp`, and `.dng`.
 
 ---
 
 ## 🏗️ Architecture
 
-- **Cloud Run Service**: HTTP server listening on port 8080
+- **Cloud Run Job**: Event-driven image processing
 - **Pub/Sub Push**: Receives image processing requests via HTTP POST
 - **GCS Mount**: Direct access to input/output buckets via FUSE mounts
-- **Event-Driven**: Publishes processing results back to Pub/Sub
+- **CLI Mode**: Local usage via `himgproc` binary
 
 ---
 
@@ -25,189 +23,167 @@ The service runs as a Cloud Run service and processes images triggered by Pub/Su
 
 The following CLI tools must be installed on your system:
 
-### ✅ Ubuntu
-
-```bash
-sudo apt update
-sudo apt install -y \
-  libvips-tools \
-  libopenslide-bin \
-  libimage-exiftool-perl
-```
-
 ### ✅ macOS (via Homebrew)
 
 ```bash
-brew install vips
-brew install openslide
-brew install exiftool
+brew install vips openslide exiftool
 ```
 
-> Note: Make sure all binaries (`vips`, `openslide-show-properties`, `exiftool`) are available in your `$PATH`.
+### ✅ Ubuntu/Debian
+
+```bash
+sudo apt update
+sudo apt install -y libvips-tools libopenslide-bin libimage-exiftool-perl
+```
+
+> **Note:** Make sure `vips`, `openslide-show-properties`, and `exiftool` binaries are available in your `$PATH`.
+
+### Automatic Installation
+
+```bash
+make deps
+```
 
 ---
 
-## 🚀 Running Locally
+## 🖥️ CLI Usage (Local)
 
-First, make sure your `.env` file is set properly. Example:
-
-```env
-APP_ENV=LOCAL
-
-PROJECT_ID=your-gcp-project-id
-GCS_ORIGINAL_BUCKET_NAME=your-original-bucket
-GCS_PROCESSED_BUCKET_NAME=your-processed-bucket
-
-IMAGE_PROCESSING_SUB_ID=your-subscription-id
-IMAGE_PROCESS_RESULT_TOPIC_ID=your-result-topic-id
-
-INPUT_MOUNT_PATH=./test-data/input
-OUTPUT_MOUNT_PATH=./test-data/output
-
-LOG_LEVEL=DEBUG
-LOG_FORMAT=text
-
-TILE_SIZE=256
-OVERLAP=0
-QUALITY=85
-DZI_LAYOUT=dz
-DZI_SUFFIX=jpeg
-
-THUMBNAIL_SIZE=256
-THUMBNAIL_QUALITY=90
-```
-
-Then build and run:
+### Build & Install
 
 ```bash
-go mod tidy
+# Install dependencies
+make deps
+
+# Build
+make build
+
+# Install (requires sudo)
+sudo make install
+
+# Now available globally
+himgproc --help
+```
+
+### Command Line Options
+
+| Option         | Short | Required | Default               | Description                                  |
+| -------------- | ----- | -------- | --------------------- | -------------------------------------------- |
+| `--input`      | `-i`  | ✅       | —                     | Path to input image file                     |
+| `--output`     | `-o`  | ❌       | `./output`            | Output directory for processed files         |
+| `--image-id`   | —     | ❌       | derived from filename | Image ID                                     |
+| `--version`    | —     | ❌       | `v2`                  | Processing version (`v1` or `v2`)            |
+| `--log-level`  | —     | ❌       | `INFO`                | Log level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
+| `--log-format` | —     | ❌       | `text`                | Log format (`text` or `json`)                |
+
+### Examples
+
+```bash
+# Basic usage
+himgproc -i ./slides/sample.svs -o ./results
+
+# With explicit image ID
+himgproc --input ./slides/biopsy.tiff --output ./processed --image-id biopsy-001
+
+# With debug logging
+himgproc -i ./image.png -o ./out --log-level DEBUG
+```
+
+### Output Structure
+
+```
+./output/{image-id}/
+├── thumbnail.jpg       # Resized preview image
+├── image.dzi           # Deep Zoom Image descriptor
+├── image.zip           # DZI tiles archive (v2)
+├── IndexMap.json       # Zip index map (v2)
+└── result.json         # Processing result event JSON
+```
+
+The `result.json` content is also printed to **stdout**, making it pipe-friendly:
+
+```bash
+himgproc -i ./image.svs -o ./out 2>/dev/null | jq '.success'
+```
+
+### Makefile Commands
+
+| Command               | Description                                             |
+| --------------------- | ------------------------------------------------------- |
+| `make deps`           | Install system dependencies (vips, openslide, exiftool) |
+| `make deps-uninstall` | Uninstall system dependencies                           |
+| `make build`          | Compile `himgproc` binary                               |
+| `sudo make install`   | Install binary to `/usr/local/bin`                      |
+| `make uninstall`      | Remove installed binary                                 |
+| `make clean`          | Remove build artifacts                                  |
+
+---
+
+## 🚀 Cloud Deployment
+
+### Architecture
+
+```
+Pub/Sub Topic → Cloud Run Job → GCS (output bucket) → Pub/Sub Result Topic
+```
+
+### Prerequisites
+
+1. Google Cloud Project with required APIs enabled
+2. GitHub repository secrets configured:
+   - `WIF_PROVIDER`: Workload Identity Federation provider
+   - `WIF_SERVICE_ACCOUNT`: Service account email
+   - `TF_STATE_BUCKET`: Terraform state bucket
+   - `ARTIFACT_REGISTRY_REPO_NAME`: Docker registry name
+   - `GCP_REGION`: Cloud Run region (e.g., `us-central1`)
+
+### Deployment
+
+Pushing to `main` or `dev` branches triggers automatic deployment via GitHub Actions:
+
+- `main` → **prod** environment
+- `dev` → **dev** environment
+
+For manual deployment:
+
+```bash
+# Go to GitHub Actions → Run "Deploy Image Processing Service" workflow
+```
+
+### Environment Variables (Cloud)
+
+```env
+APP_ENV=PROD
+WORKER_TYPE=medium
+PROJECT_ID=your-gcp-project-id
+REGION=us-central1
+ORIGINAL_BUCKET_NAME=histopath-original
+PROCESSED_BUCKET_NAME=histopath-processed
+IMAGE_PROCESS_RESULT_TOPIC_ID=image-processing-result
+INPUT_MOUNT_PATH=/input
+OUTPUT_MOUNT_PATH=/output
+```
+
+---
+
+## 🔧 Legacy Local Mode (Env Vars)
+
+Running `himgproc` without flags falls back to the legacy env var mode:
+
+```bash
+# Set up .env file
+cp .env.example .env
+
+# Run
 go run cmd/main.go
 ```
 
-The server will start on port 8080 (or the port specified in `PORT` env var).
-
----
-
-## 🔍 Endpoints
-
-### Health Check
-```bash
-GET http://localhost:8080/health
-
-Response:
-{
-  "status": "healthy",
-  "time": "2025-01-15T10:30:00Z"
-}
-```
-
-### Pub/Sub Push Endpoint
-```bash
-POST http://localhost:8080/
-
-Body: Pub/Sub push message format
-{
-  "message": {
-    "data": "base64-encoded-event-data",
-    "attributes": {
-      "event_type": "image.processing.requested.v1",
-      "image_id": "abc-123"
-    },
-    "messageId": "123456"
-  },
-  "subscription": "projects/PROJECT_ID/subscriptions/SUB_ID"
-}
-```
-
----
-
-## 🔧 Testing with cURL
-
-You can simulate a Pub/Sub push message locally:
-
-```bash
-# First, base64 encode your event data
-EVENT_DATA='{"EventID":"test-123","EventType":"image.processing.requested.v1","Timestamp":"2025-01-15T10:00:00Z","image-id":"test-image-1","origin-path":"test-folder/image.svs"}'
-ENCODED_DATA=$(echo -n "$EVENT_DATA" | base64)
-
-# Send the request
-curl -X POST http://localhost:8080/ \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"message\": {
-      \"data\": \"$ENCODED_DATA\",
-      \"attributes\": {
-        \"event_type\": \"image.processing.requested.v1\",
-        \"image_id\": \"test-image-1\"
-      },
-      \"messageId\": \"test-msg-123\"
-    },
-    \"subscription\": \"projects/test/subscriptions/test-sub\"
-  }"
-```
-
----
-
-## 🚢 Deployment
-
-### Prerequisites
-1. Google Cloud Project with required APIs enabled
-2. GitHub repository secrets configured:
-   - `GCP_SA_KEY`: Service account JSON key
-   - `GCP_PROJECT_ID`: Your GCP project ID
-   - `GCP_REGION`: Cloud Run region (e.g., `us-central1`)
-   - `GCS_ORIGINAL_BUCKET_NAME`: Input bucket name
-   - `GCS_PROCESSED_BUCKET_NAME`: Output bucket name
-   - `GCP_IMAGE_PROCESSING_SUB_ID`: Pub/Sub subscription ID
-   - `GCP_IMAGE_PROCESS_RESULT_TOPIC_ID`: Result topic ID
-
-### Deployment Steps
-
-1. **Build and Push Docker Image**
-   - Go to GitHub Actions
-   - Run "Build Image Processing Service" workflow
-   - This builds and pushes the image to Artifact Registry
-
-2. **Deploy to Cloud Run**
-   - Run "Deploy Image Processing Service" workflow
-   - This deploys the service and configures Pub/Sub push subscription
-
-### Manual Deployment
-
-```bash
-# Build and push image
-docker build -t us-central1-docker.pkg.dev/PROJECT_ID/histopath-docker-repo/image-processing-service:latest .
-docker push us-central1-docker.pkg.dev/PROJECT_ID/histopath-docker-repo/image-processing-service:latest
-
-# Deploy to Cloud Run
-gcloud run deploy image-processing-service \
-  --image=us-central1-docker.pkg.dev/PROJECT_ID/histopath-docker-repo/image-processing-service:latest \
-  --region=us-central1 \
-  --platform=managed \
-  --allow-unauthenticated \
-  --port=8080 \
-  --cpu=2 \
-  --memory=4Gi \
-  --timeout=3600 \
-  --concurrency=10 \
-  --add-volume=name=input-bucket,type=cloud-storage,bucket=INPUT_BUCKET \
-  --add-volume-mount=volume=input-bucket,mount-path=/gcs/INPUT_BUCKET \
-  --set-env-vars=APP_ENV=PROD,...
-
-# Configure Pub/Sub push subscription
-SERVICE_URL=$(gcloud run services describe image-processing-service --region=us-central1 --format='value(status.url)')
-
-gcloud pubsub subscriptions create image-processing-sub \
-  --topic=image-processing-requests \
-  --push-endpoint="${SERVICE_URL}/" \
-  --ack-deadline=600
-```
+Required env vars: `INPUT_IMAGE_ID`, `INPUT_ORIGIN_PATH`, `INPUT_PROCESSING_VERSION`, `INPUT_BUCKET_NAME`
 
 ---
 
 ## 🛠 Developer Notes
 
-- The service scales to zero when idle to save costs
+- Service scales to zero when idle to save costs
 - Processing timeout is set to 3600 seconds (1 hour)
 - Concurrent processing limit is 10 instances
 - Health checks ensure the service is responsive
@@ -218,6 +194,7 @@ gcloud pubsub subscriptions create image-processing-sub \
 ## 📊 Monitoring
 
 Monitor your service in the Google Cloud Console:
+
 - **Cloud Run Metrics**: Request count, latency, error rate
 - **Logs**: View processing logs in Cloud Logging
 - **Pub/Sub Metrics**: Message delivery, ack/nack rates
@@ -227,11 +204,12 @@ Monitor your service in the Google Cloud Console:
 
 ## 🔒 Security
 
-- Service account needs permissions:
-  - `roles/pubsub.subscriber`
-  - `roles/pubsub.publisher`
-  - `roles/storage.objectViewer` (input bucket)
-  - `roles/storage.objectAdmin` (output bucket)
+Service account needs permissions:
+
+- `roles/pubsub.subscriber`
+- `roles/pubsub.publisher`
+- `roles/storage.objectViewer` (input bucket)
+- `roles/storage.objectAdmin` (output bucket)
 
 ---
 
