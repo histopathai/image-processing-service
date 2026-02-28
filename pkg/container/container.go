@@ -40,7 +40,7 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*Contain
 
 	if cfg.Env == config.EnvLocal {
 		logger.Info("Running in local environment")
-		publisher = stdout.NewPublisher(logger)
+		publisher = stdout.NewPublisher(logger, cfg.Storage.OutputMountPath)
 
 		outputStorage = InfraStorage.NewLocalStorage(logger)
 		logger.Info("Using local storage service")

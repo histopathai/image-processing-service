@@ -35,6 +35,7 @@ Thumbs.db
 bin/
 build/
 dist/
+himgproc
 
 # Coverage results
 coverage.out
