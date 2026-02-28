@@ -1,5 +1,5 @@
-BINARY_NAME=himgproc
-INSTALL_PATH=/usr/local/bin
+BINARY_NAME := himgproc
+INSTALL_PATH := /usr/local/bin
 
 .PHONY: build install uninstall clean
 
@@ -8,9 +8,9 @@ build:
 	go build -o $(BINARY_NAME) ./cmd/main.go
 	@echo "✅ Built: ./$(BINARY_NAME)"
 
-install: build
+install:
 	@echo "📦 Installing $(BINARY_NAME) to $(INSTALL_PATH)..."
-	cp $(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
+	install -m 0755 $(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
 	@echo "✅ Installed: $(INSTALL_PATH)/$(BINARY_NAME)"
 
 uninstall:
