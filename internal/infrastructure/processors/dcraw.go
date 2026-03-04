@@ -42,7 +42,7 @@ func (p *DcrawProcessor) DNGToTIFF(ctx context.Context, inputFilePath, outputFil
 	args := []string{
 		"-c",      // Write to stdout
 		"-T",      // Output TIFF
-		"-4",      // Linear 16-bit
+		"-6",      // 16-bit output with sRGB gamma (matches macOS Preview brightness)
 		"-q", "3", // AHD interpolation (high-quality)
 		"-w",      // Camera white balance
 		"-H", "0", // No highlight clipping
