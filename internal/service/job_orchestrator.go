@@ -157,13 +157,11 @@ func (o *JobOrchestrator) ProcessJob(ctx context.Context, input *model.JobInput)
 		},
 	})
 
-	if o.config.Env != config.EnvProduction {
-		if err := outputWorkspace.Remove(); err != nil {
-			o.logger.Warn("Failed to clean up output workspace",
-				"imageID", input.ImageID,
-				"error", err,
-			)
-		}
+	if err := outputWorkspace.Remove(); err != nil {
+		o.logger.Warn("Failed to clean up output workspace",
+			"imageID", input.ImageID,
+			"error", err,
+		)
 	}
 
 	o.logger.Info("Image processing job completed successfully",
@@ -186,11 +184,15 @@ func (o *JobOrchestrator) constructOutputPath(imageID string) string {
 	if o.config.Env != config.EnvLocal {
 		return imageID
 	}
-	// otherwise, construct full path
-	if o.config.Env == config.EnvLocal {
-		return filepath.Join(o.config.OutputRootPath, imageID)
+
+	// For local CLI, the OutputMountPath (which holds --output arg) points
+	// directly to the final directory we want (e.g /processed), so we DO NOT
+	// append the imageID again.
+	// We use Storage.OutputMountPath because OutputRootPath was deprecated in config.go
+	if o.config.Storage.OutputMountPath != "" {
+		return o.config.Storage.OutputMountPath
 	}
-	return filepath.Join(o.config.OutputRootPath, imageID)
+	return o.config.OutputRootPath
 }
 
 func (o *JobOrchestrator) publishEvent(ctx context.Context, event *events.ImageProcessCompleteEvent) error {

@@ -7,21 +7,21 @@ OS := $(shell uname -s)
 deps:
 ifeq ($(OS),Darwin)
 	@echo "🍎 Installing dependencies for macOS..."
-	brew install vips openslide exiftool
+	brew install vips openslide exiftool dcraw
 else
 	@echo "🐧 Installing dependencies for Linux..."
 	sudo apt update
-	sudo apt install -y libvips-tools libopenslide-bin libimage-exiftool-perl
+	sudo apt install -y libvips-tools libopenslide-bin libimage-exiftool-perl dcraw
 endif
 	@echo "✅ Dependencies installed"
 
 deps-uninstall:
 ifeq ($(OS),Darwin)
 	@echo "🍎 Uninstalling dependencies for macOS..."
-	brew uninstall exiftool openslide vips
+	brew uninstall exiftool openslide vips dcraw
 else
 	@echo "🐧 Uninstalling dependencies for Linux..."
-	sudo apt remove -y libvips-tools libopenslide-bin libimage-exiftool-perl
+	sudo apt remove -y libvips-tools libopenslide-bin libimage-exiftool-perl dcraw
 endif
 	@echo "✅ Dependencies uninstalled"
 
