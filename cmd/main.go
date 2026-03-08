@@ -206,13 +206,8 @@ func runCLI(ctx context.Context, opts CLIOptions) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if err := utils.LoadSupportedFormats("./supported_formats.json"); err != nil {
-		// Try from binary's directory
-		execPath, _ := os.Executable()
-		altPath := filepath.Join(filepath.Dir(execPath), "supported_formats.json")
-		if err2 := utils.LoadSupportedFormats(altPath); err2 != nil {
-			return fmt.Errorf("failed to load supported formats: %w (also tried %s: %v)", err, altPath, err2)
-		}
+	if err := utils.LoadSupportedFormats(); err != nil {
+		return fmt.Errorf("failed to load supported formats from embed: %w", err)
 	}
 
 	input, err := model.NewJobInput(opts.ImageID, filepath.Base(absInput), opts.Version)
@@ -263,8 +258,8 @@ func runLegacy(ctx context.Context, logLevel, logFormat string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if err := utils.LoadSupportedFormats("./supported_formats.json"); err != nil {
-		return fmt.Errorf("failed to load supported formats: %w", err)
+	if err := utils.LoadSupportedFormats(); err != nil {
+		return fmt.Errorf("failed to load supported formats from embed: %w", err)
 	}
 
 	input, err := getJobInput()
