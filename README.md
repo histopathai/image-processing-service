@@ -66,14 +66,29 @@ himgproc --help
 
 ### Command Line Options
 
-| Option         | Short | Required | Default               | Description                                  |
-| -------------- | ----- | -------- | --------------------- | -------------------------------------------- |
-| `--input`      | `-i`  | ✅       | —                     | Path to input image file                     |
-| `--output`     | `-o`  | ❌       | `./output`            | Output directory for processed files         |
-| `--image-id`   | —     | ❌       | derived from filename | Image ID                                     |
-| `--version`    | —     | ❌       | `v2`                  | Processing version (`v1` or `v2`)            |
-| `--log-level`  | —     | ❌       | `INFO`                | Log level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
-| `--log-format` | —     | ❌       | `text`                | Log format (`text` or `json`)                |
+| Option                | Short | Required | Default               | Description                                  |
+| --------------------- | ----- | -------- | --------------------- | -------------------------------------------- |
+| `--input`             | `-i`  | ✅       | —                     | Path to input image file                     |
+| `--output`            | `-o`  | ❌       | `./output`            | Output directory for processed files         |
+| `--image-id`          | —     | ❌       | derived from filename | Image ID                                     |
+| `--version`           | —     | ❌       | `v2`                  | Processing version (`v1` or `v2`)            |
+| `--log-level`         | —     | ❌       | `INFO`                | Log level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
+| `--log-format`        | —     | ❌       | `text`                | Log format (`text` or `json`)                |
+| `--tile-size`         | —     | ❌       | `256`                 | DZI Tile Size                                |
+| `--overlap`           | —     | ❌       | `0`                   | DZI Overlap                                  |
+| `--quality`           | —     | ❌       | `85`                  | DZI Quality level (1-100)                    |
+| `--dzi-container`     | —     | ❌       | `zip`                 | DZI Container format (`zip` or `fs`)         |
+| `--dzi-layout`        | —     | ❌       | `dz`                  | DZI Layout format                            |
+| `--dzi-suffix`        | —     | ❌       | `jpg`                 | DZI Tile image suffix                        |
+| `--dzi-compression`   | —     | ❌       | `0`                   | DZI Zip Compression Level (`0`-`9`)          |
+| `--thumbnail-size`    | —     | ❌       | `256`                 | Thumbnail size (Width & Height)              |
+| `--thumbnail-quality` | —     | ❌       | `90`                  | Thumbnail Quality level (1-100)              |
+
+> **Configuration Priority:**
+>
+> 1. **CLI Flags** (Highest priority, overrides everything)
+> 2. **Environment Variables / `.env` File** (Used if CLI flag is not provided)
+> 3. **Default Values** (Configured as fallback when neither is provided)
 
 ### Examples
 
