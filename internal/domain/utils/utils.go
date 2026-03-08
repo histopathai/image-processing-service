@@ -1,25 +1,23 @@
 package utils
 
 import (
+	_ "embed"
 	"encoding/json"
-	"os"
 	"strings"
 )
 
 type Format map[string]bool
 
+//go:embed supported_formats.json
+var supportedFormatsBytes []byte
+
 // Global runtime-loaded supported formats
 var SupportedFormats = Format{}
 
-// Load JSON file into SupportedFormats
-func LoadSupportedFormats(jsonFilePath string) error {
-	data, err := os.ReadFile(jsonFilePath)
-	if err != nil {
-		return err
-	}
-
+// Load JSON file into SupportedFormats via go:embed
+func LoadSupportedFormats() error {
 	// Unmarshal into global variable
-	err = json.Unmarshal(data, &SupportedFormats)
+	err := json.Unmarshal(supportedFormatsBytes, &SupportedFormats)
 	if err != nil {
 		return err
 	}
